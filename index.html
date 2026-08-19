@@ -1,0 +1,2001 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Sudomatic — 数独工坊</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<style>
+  :root {
+    --teal-primary: #0d9488;
+    --teal-dark: #0f766e;
+    --teal-darker: #115e59;
+    --teal-light: #f0fdfa;
+    --teal-100: #ccfbf1;
+    --teal-200: #99f6e4;
+    --teal-300: #5eead4;
+    --teal-400: #2dd4bf;
+    --teal-500: #14b8a6;
+    --teal-600: #0d9488;
+    --teal-700: #0f766e;
+    --slate-50: #f8fafc;
+    --slate-100: #f1f5f9;
+    --slate-200: #e2e8f0;
+    --slate-300: #cbd5e1;
+    --slate-400: #94a3b8;
+    --slate-500: #64748b;
+    --slate-600: #475569;
+    --slate-700: #334155;
+    --slate-800: #1e293b;
+    --slate-900: #0f172a;
+    --rose-500: #f43f5e;
+    --amber-500: #f59e0b;
+  }
+
+  * { -webkit-tap-highlight-color: transparent; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background:
+      radial-gradient(circle at 0% 0%, rgba(13, 148, 136, 0.08) 0%, transparent 35%),
+      radial-gradient(circle at 100% 0%, rgba(20, 184, 166, 0.06) 0%, transparent 35%),
+      linear-gradient(180deg, #f0fdfa 0%, #ffffff 60%, #ffffff 100%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    color: var(--slate-800);
+    overflow-x: hidden;
+  }
+
+  .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* Header 毛玻璃 */
+  .header-glass {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border-bottom: 1px solid rgba(13, 148, 136, 0.12);
+  }
+
+  /* Tab 激活态 */
+  .tab-btn {
+    position: relative;
+    padding: 14px 4px;
+    color: var(--slate-500);
+    font-weight: 500;
+    font-size: 14px;
+    transition: color 0.2s ease;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--slate-700); }
+  .tab-btn.active { color: var(--teal-primary); }
+  .tab-btn::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: -1px;
+    width: 0;
+    height: 2.5px;
+    background: linear-gradient(90deg, var(--teal-500), var(--teal-700));
+    border-radius: 2px;
+    transform: translateX(-50%);
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .tab-btn.active::after { width: 100%; }
+
+  /* 卡片 */
+  .card {
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04), 0 8px 24px -8px rgba(13, 148, 136, 0.08);
+    border: 1px solid rgba(226, 232, 240, 0.8);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+  }
+  .card-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(15, 23, 42, 0.04), 0 16px 40px -8px rgba(13, 148, 136, 0.18);
+  }
+
+  /* 主按钮 */
+  .btn-primary {
+    background: linear-gradient(135deg, var(--teal-500) 0%, var(--teal-700) 100%);
+    color: white;
+    font-weight: 600;
+    border-radius: 12px;
+    padding: 10px 18px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 12px -2px rgba(13, 148, 136, 0.35);
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -2px rgba(13, 148, 136, 0.45); }
+  .btn-primary:active { transform: translateY(0); }
+
+  .btn-secondary {
+    background: var(--slate-100);
+    color: var(--slate-700);
+    font-weight: 500;
+    border-radius: 12px;
+    padding: 10px 16px;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+  }
+  .btn-secondary:hover {
+    background: var(--teal-50);
+    color: var(--teal-700);
+    border-color: var(--teal-200);
+  }
+
+  /* 数独棋盘 */
+  .sudoku-board {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    grid-template-rows: repeat(9, 1fr);
+    aspect-ratio: 1;
+    background: var(--teal-700);
+    border: 2.5px solid var(--teal-700);
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 20px 50px -15px rgba(13, 148, 136, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .sudoku-cell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: white;
+    border-right: 1px solid var(--slate-200);
+    border-bottom: 1px solid var(--slate-200);
+    transition: background-color 0.12s ease;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    color: var(--slate-800);
+    user-select: none;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .sudoku-cell[data-col="8"] { border-right: none; }
+  .sudoku-cell[data-row="8"] { border-bottom: none; }
+  .sudoku-cell[data-col="2"], .sudoku-cell[data-col="5"] { border-right: 2px solid var(--teal-700); }
+  .sudoku-cell[data-row="2"], .sudoku-cell[data-row="5"] { border-bottom: 2px solid var(--teal-700); }
+
+  /* 格子状态 */
+  .cell-related { background: #f0fdfa; }
+  .cell-same-num { background: #ccfbf1; }
+  .cell-selected {
+    background: #99f6e4 !important;
+    box-shadow: inset 0 0 0 2.5px var(--teal-600);
+    z-index: 2;
+  }
+  .cell-initial { color: var(--slate-900); font-weight: 700; }
+  .cell-user { color: var(--teal-700); }
+  .cell-error {
+    color: var(--rose-500) !important;
+    background: #fff1f2 !important;
+    animation: shake 0.35s ease;
+  }
+  .cell-hint {
+    color: var(--amber-500) !important;
+    animation: hintPulse 0.6s ease;
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-3px); }
+    75% { transform: translateX(3px); }
+  }
+  @keyframes hintPulse {
+    0% { transform: scale(0.5); opacity: 0; }
+    60% { transform: scale(1.2); opacity: 1; }
+    100% { transform: scale(1); }
+  }
+  @keyframes cellPop {
+    0% { transform: scale(0.7); opacity: 0.4; }
+    50% { transform: scale(1.15); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  .cell-pop { animation: cellPop 0.25s ease; }
+
+  /* 笔记 */
+  .notes-grid {
+    position: absolute;
+    inset: 2px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    font-weight: 500;
+    color: var(--slate-500);
+    pointer-events: none;
+  }
+  .notes-grid span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .notes-grid span.highlight { color: var(--teal-700); font-weight: 700; }
+
+  /* 数字按钮 - 桌面端 */
+  .num-btn {
+    aspect-ratio: 1;
+    background: white;
+    border: 1px solid var(--slate-200);
+    border-radius: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--slate-700);
+    transition: all 0.18s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    cursor: pointer;
+    padding: 4px 0;
+  }
+  .num-btn:hover:not(:disabled) {
+    background: var(--teal-50);
+    border-color: var(--teal-400);
+    color: var(--teal-700);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px -4px rgba(13, 148, 136, 0.3);
+  }
+  .num-btn:active { transform: translateY(0); }
+  .num-btn:disabled { opacity: 0.35; cursor: not-allowed; background: var(--slate-50); }
+  .num-btn .count {
+    font-size: 9px;
+    font-weight: 500;
+    color: var(--slate-400);
+    margin-top: 2px;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* 工具按钮 - 桌面端 */
+  .tool-btn {
+    aspect-ratio: 1;
+    background: white;
+    border: 1px solid var(--slate-200);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    color: var(--slate-600);
+    padding: 6px 4px;
+  }
+  .tool-btn:hover:not(:disabled) {
+    background: var(--teal-50);
+    border-color: var(--teal-400);
+    color: var(--teal-700);
+    transform: translateY(-1px);
+  }
+  .tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .tool-btn.active {
+    background: linear-gradient(135deg, var(--teal-500), var(--teal-700));
+    color: white;
+    border-color: transparent;
+    box-shadow: 0 4px 12px -2px rgba(13, 148, 136, 0.4);
+  }
+  .tool-btn .label { font-size: 10px; font-weight: 500; }
+
+  /* Tab 面板淡入 */
+  .tab-panel { animation: fadeInUp 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* 难度选择 */
+  .diff-card {
+    background: white;
+    border: 2px solid var(--slate-200);
+    border-radius: 16px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+  }
+  .diff-card:hover {
+    border-color: var(--teal-400);
+    transform: translateY(-3px);
+    box-shadow: 0 12px 24px -8px rgba(13, 148, 136, 0.25);
+  }
+  .diff-card.active {
+    border-color: var(--teal-600);
+    background: linear-gradient(135deg, var(--teal-50) 0%, white 60%);
+    box-shadow: 0 8px 24px -6px rgba(13, 148, 136, 0.3);
+  }
+  .diff-card.active::before {
+    content: '';
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 8px;
+    height: 8px;
+    background: var(--teal-600);
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(13, 148, 136, 0.2);
+  }
+
+  /* 开关 */
+  .switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background: var(--slate-200);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.25s ease;
+    flex-shrink: 0;
+  }
+  .switch::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+  }
+  .switch.on { background: var(--teal-600); }
+  .switch.on::after { transform: translateX(20px); }
+
+  /* 模态框 */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    padding: 16px;
+  }
+  .modal-overlay.show { opacity: 1; pointer-events: auto; }
+  .modal-content {
+    transform: scale(0.9);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .modal-overlay.show .modal-content { transform: scale(1); }
+
+  /* 暂停遮罩 */
+  .board-wrapper { position: relative; }
+  .pause-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    z-index: 10;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .pause-overlay.show { opacity: 1; pointer-events: auto; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--slate-900);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 200;
+    max-width: 90vw;
+    text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* 庆祝粒子 */
+  .confetti {
+    position: fixed;
+    top: -10px;
+    width: 8px;
+    height: 14px;
+    pointer-events: none;
+    z-index: 99;
+    animation: confettiFall linear forwards;
+  }
+  @keyframes confettiFall { to { transform: translateY(110vh) rotate(720deg); } }
+
+  /* 难度徽章 */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .badge-easy { background: #ecfdf5; color: #047857; }
+  .badge-medium { background: #fffbeb; color: #b45309; }
+  .badge-hard { background: #fff1f2; color: #be123c; }
+  .badge-expert { background: #f5f3ff; color: #6d28d9; }
+
+  /* 历史记录条目 */
+  .history-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-radius: 12px;
+    transition: background 0.15s ease;
+    cursor: default;
+  }
+  .history-row:hover { background: var(--teal-50); }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--slate-300); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--slate-400); }
+
+  /* ============ 棋盘字号响应式 ============ */
+  .sudoku-cell { font-size: clamp(16px, 5.5vw, 30px); }
+  .notes-grid { font-size: clamp(7px, 1.8vw, 10px); }
+
+  /* ============ 移动端优化 (≤640px) ============ */
+  @media (max-width: 640px) {
+    /* 棋盘字号 */
+    .sudoku-cell { font-size: clamp(15px, 7vw, 22px); }
+    .notes-grid { font-size: clamp(7px, 2.2vw, 9px); }
+
+    /* 数字按钮：扁矩形，更紧凑 */
+    .num-btn {
+      aspect-ratio: auto;
+      padding: 12px 0;
+      font-size: 18px;
+      border-radius: 10px;
+      gap: 0;
+    }
+    .num-btn .count {
+      font-size: 8px;
+      margin-top: 1px;
+    }
+
+    /* 工具按钮：更扁，图标+文字横排可能 */
+    .tool-btn {
+      aspect-ratio: auto;
+      padding: 10px 4px;
+      border-radius: 10px;
+      gap: 2px;
+    }
+    .tool-btn svg { width: 17px; height: 17px; }
+    .tool-btn .label { font-size: 9px; }
+
+    /* 卡片圆角略小 */
+    .card { border-radius: 16px; }
+
+    /* Header 紧凑 */
+    .header-logo-text { display: none; }
+
+    /* 信息卡：横向滚动 */
+    .info-card-content {
+      overflow-x: auto;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .info-card-content::-webkit-scrollbar { display: none; }
+
+    .info-divider { display: none; }
+    .info-item-label { font-size: 10px; }
+    .info-item-value { font-size: 14px; }
+
+    /* Tab 字号略小 */
+    .tab-btn { font-size: 13px; padding: 12px 2px; }
+
+    /* 主按钮 padding 减小 */
+    .btn-primary { padding: 8px 14px; font-size: 13px; }
+    .btn-secondary { padding: 8px 12px; font-size: 13px; }
+
+    /* 模态框内边距 */
+    .modal-card { padding: 24px 20px !important; }
+
+    /* 难度卡片紧凑 */
+    .diff-card { padding: 14px; }
+  }
+
+  /* ============ 超小屏优化 (≤380px) ============ */
+  @media (max-width: 380px) {
+    .sudoku-cell { font-size: clamp(13px, 7.5vw, 18px); }
+
+    .num-btn {
+      padding: 10px 0;
+      font-size: 16px;
+    }
+    .num-btn .count { font-size: 7px; }
+
+    .tool-btn {
+      padding: 8px 2px;
+    }
+    .tool-btn svg { width: 15px; height: 15px; }
+    .tool-btn .label { font-size: 8px; }
+  }
+
+  /* ============ 平板端 (641px-1023px) ============ */
+  @media (min-width: 641px) and (max-width: 1023px) {
+    .sudoku-cell { font-size: clamp(20px, 4vw, 28px); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== Header ========== -->
+<header class="sticky top-0 z-40 header-glass">
+  <div class="max-w-[1280px] mx-auto px-3 sm:px-6">
+    <div class="flex items-center justify-between h-14 sm:h-16">
+      <!-- Logo -->
+      <div class="flex items-center gap-2.5 sm:gap-3">
+        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-white shadow-lg shadow-teal-500/30 flex-shrink-0"
+             style="background: linear-gradient(135deg, #14b8a6, #0f766e);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M9 3v18M15 3v18M3 9h18M3 15h18"/>
+          </svg>
+        </div>
+        <div class="header-logo-text">
+          <h1 class="text-base sm:text-lg font-bold text-slate-800 leading-tight tracking-tight">Sudomatic</h1>
+          <p class="text-[10px] sm:text-[11px] text-slate-500 leading-tight font-medium">数独工坊 · 训练大脑</p>
+        </div>
+      </div>
+
+      <!-- 实时状态 - 中等屏幕以上显示 -->
+      <div class="hidden lg:flex items-center gap-5">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-teal-50 border border-teal-100">
+          <span id="diff-badge" class="badge badge-medium">中等</span>
+        </div>
+        <div class="flex items-center gap-2 text-sm">
+          <i data-lucide="timer" class="w-4 h-4 text-teal-600"></i>
+          <span id="header-timer" class="font-mono font-semibold text-slate-700 tabular-nums">00:00</span>
+        </div>
+        <div class="flex items-center gap-2 text-sm">
+          <i data-lucide="target" class="w-4 h-4 text-teal-600"></i>
+          <span class="text-slate-500">错误</span>
+          <span id="header-mistakes" class="font-mono font-semibold text-slate-700 tabular-nums">0/3</span>
+        </div>
+      </div>
+
+      <button id="new-game-header" class="btn-primary text-sm flex items-center gap-2 flex-shrink-0">
+        <i data-lucide="sparkles" class="w-4 h-4"></i>
+        <span class="hidden sm:inline">新游戏</span>
+      </button>
+    </div>
+
+    <!-- Tab 导航 -->
+    <nav class="flex gap-4 sm:gap-6 -mb-px overflow-x-auto scrollbar-none">
+      <button class="tab-btn active" data-tab="game">游戏</button>
+      <button class="tab-btn" data-tab="stats">统计</button>
+      <button class="tab-btn" data-tab="settings">设置</button>
+      <button class="tab-btn" data-tab="rules">规则</button>
+    </nav>
+  </div>
+</header>
+
+<!-- ========== Main ========== -->
+<main class="max-w-[1280px] mx-auto px-3 sm:px-6 py-4 sm:py-8">
+
+  <!-- ====== 游戏 Tab ====== -->
+  <section id="tab-game" class="tab-panel">
+    <div class="grid lg:grid-cols-[1fr_340px] gap-4 sm:gap-6">
+
+      <!-- 左侧：信息 + 棋盘 -->
+      <div class="space-y-3 sm:space-y-4 min-w-0">
+        <!-- 信息卡 -->
+        <div class="card p-3 sm:p-4">
+          <div class="info-card-content flex items-center gap-4 sm:gap-5">
+            <div class="flex-shrink-0">
+              <div class="info-item-label text-[10px] sm:text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">难度</div>
+              <div id="info-diff" class="font-semibold text-slate-800 text-sm sm:text-base">中等</div>
+            </div>
+            <div class="info-divider w-px h-8 bg-slate-200"></div>
+            <div class="flex-shrink-0">
+              <div class="info-item-label text-[10px] sm:text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">用时</div>
+              <div id="info-timer" class="font-mono font-semibold text-slate-800 tabular-nums text-sm sm:text-base">00:00</div>
+            </div>
+            <div class="info-divider w-px h-8 bg-slate-200"></div>
+            <div class="flex-shrink-0">
+              <div class="info-item-label text-[10px] sm:text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">错误</div>
+              <div class="font-semibold text-slate-800 text-sm sm:text-base"><span id="info-mistakes" class="font-mono">0</span><span class="text-slate-400">/3</span></div>
+            </div>
+            <div class="info-divider w-px h-8 bg-slate-200"></div>
+            <div class="flex-shrink-0">
+              <div class="info-item-label text-[10px] sm:text-[11px] uppercase tracking-wider text-slate-400 font-semibold mb-0.5">进度</div>
+              <div class="font-semibold text-slate-800 text-sm sm:text-base"><span id="info-progress" class="font-mono">0</span><span class="text-slate-400">%</span></div>
+            </div>
+            <div class="flex-1 min-w-0"></div>
+            <button id="pause-btn" class="btn-secondary text-sm flex items-center gap-1.5 flex-shrink-0">
+              <i data-lucide="pause" class="w-4 h-4"></i>
+              <span class="hidden sm:inline">暂停</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 棋盘 -->
+        <div class="card p-2.5 sm:p-5">
+          <div class="board-wrapper">
+            <div id="board" class="sudoku-board"></div>
+            <div id="pause-overlay" class="pause-overlay">
+              <div class="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-teal-50 flex items-center justify-center mb-2">
+                <i data-lucide="pause" class="w-7 h-7 sm:w-8 sm:h-8 text-teal-600"></i>
+              </div>
+              <div class="text-base sm:text-lg font-semibold text-slate-800">已暂停</div>
+              <div class="text-xs sm:text-sm text-slate-500">计时已停止</div>
+              <button id="resume-btn" class="btn-primary text-sm mt-2 flex items-center gap-2">
+                <i data-lucide="play" class="w-4 h-4"></i>
+                继续游戏
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：控制面板 -->
+      <div class="space-y-3 sm:space-y-4 min-w-0">
+        <!-- 工具栏 -->
+        <div class="card p-3 sm:p-4">
+          <div class="flex items-center justify-between mb-2.5 sm:mb-3">
+            <h3 class="text-sm font-semibold text-slate-700">工具</h3>
+            <span class="text-[10px] sm:text-[11px] text-slate-400 hidden sm:inline">撤销 / 重做 / 擦除 / 笔记 / 提示</span>
+          </div>
+          <div class="grid grid-cols-5 gap-1.5 sm:gap-2">
+            <button id="tool-undo" class="tool-btn" title="撤销 (Ctrl+Z)">
+              <i data-lucide="undo-2" class="w-5 h-5"></i>
+              <span class="label">撤销</span>
+            </button>
+            <button id="tool-redo" class="tool-btn" title="重做 (Ctrl+Y)">
+              <i data-lucide="redo-2" class="w-5 h-5"></i>
+              <span class="label">重做</span>
+            </button>
+            <button id="tool-erase" class="tool-btn" title="擦除 (Delete)">
+              <i data-lucide="eraser" class="w-5 h-5"></i>
+              <span class="label">擦除</span>
+            </button>
+            <button id="tool-note" class="tool-btn" title="笔记模式 (N)">
+              <i data-lucide="pencil" class="w-5 h-5"></i>
+              <span class="label">笔记</span>
+            </button>
+            <button id="tool-hint" class="tool-btn" title="提示 (H)">
+              <i data-lucide="lightbulb" class="w-5 h-5"></i>
+              <span class="label">提示</span>
+            </button>
+          </div>
+          <div class="mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+            <span class="text-slate-500">剩余提示</span>
+            <span class="font-mono font-semibold text-teal-700"><span id="hints-left">3</span>/3</span>
+          </div>
+        </div>
+
+        <!-- 数字面板 -->
+        <div class="card p-3 sm:p-4">
+          <div class="flex items-center justify-between mb-2.5 sm:mb-3">
+            <h3 class="text-sm font-semibold text-slate-700">数字</h3>
+            <span class="text-[10px] sm:text-[11px] text-slate-400 hidden sm:inline">点击或键盘 1-9 输入</span>
+          </div>
+          <div id="num-pad" class="grid grid-cols-5 gap-1.5 sm:gap-2">
+            <!-- 数字按钮由 JS 生成 -->
+          </div>
+        </div>
+
+        <!-- 提示卡 -->
+        <div class="card p-3 sm:p-4 bg-gradient-to-br from-teal-50 to-white">
+          <div class="flex items-start gap-3">
+            <div class="w-9 h-9 rounded-lg bg-teal-100 flex items-center justify-center flex-shrink-0">
+              <i data-lucide="zap" class="w-4 h-4 text-teal-700"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-slate-800 mb-1">快捷键</div>
+              <div class="text-xs text-slate-600 space-y-1">
+                <div class="flex justify-between gap-2"><span>方向键</span><span class="font-mono">移动</span></div>
+                <div class="flex justify-between gap-2"><span>1-9</span><span class="font-mono">填数字</span></div>
+                <div class="flex justify-between gap-2"><span>N</span><span class="font-mono">笔记</span></div>
+                <div class="flex justify-between gap-2"><span>H</span><span class="font-mono">提示</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ====== 统计 Tab ====== -->
+  <section id="tab-stats" class="tab-panel hidden">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-6">
+      <div class="card card-hover p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-2 sm:mb-3">
+          <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-teal-50 flex items-center justify-center">
+            <i data-lucide="gamepad-2" class="w-4 h-4 sm:w-5 sm:h-5 text-teal-600"></i>
+          </div>
+          <span class="text-[10px] sm:text-xs font-semibold text-emerald-600">总计</span>
+        </div>
+        <div class="text-2xl sm:text-3xl font-bold font-mono text-slate-800" id="stat-played">0</div>
+        <div class="text-xs sm:text-sm text-slate-500 mt-0.5 sm:mt-1">游戏局数</div>
+      </div>
+      <div class="card card-hover p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-2 sm:mb-3">
+          <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+            <i data-lucide="trophy" class="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600"></i>
+          </div>
+          <span class="text-[10px] sm:text-xs font-semibold text-teal-600">完成</span>
+        </div>
+        <div class="text-2xl sm:text-3xl font-bold font-mono text-slate-800" id="stat-won">0</div>
+        <div class="text-xs sm:text-sm text-slate-500 mt-0.5 sm:mt-1">胜利次数</div>
+      </div>
+      <div class="card card-hover p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-2 sm:mb-3">
+          <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+            <i data-lucide="flame" class="w-4 h-4 sm:w-5 sm:h-5 text-amber-600"></i>
+          </div>
+          <span class="text-[10px] sm:text-xs font-semibold text-amber-600">连胜</span>
+        </div>
+        <div class="text-2xl sm:text-3xl font-bold font-mono text-slate-800" id="stat-streak">0</div>
+        <div class="text-xs sm:text-sm text-slate-500 mt-0.5 sm:mt-1">当前连胜</div>
+      </div>
+      <div class="card card-hover p-4 sm:p-5">
+        <div class="flex items-center justify-between mb-2 sm:mb-3">
+          <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-rose-50 flex items-center justify-center">
+            <i data-lucide="percent" class="w-4 h-4 sm:w-5 sm:h-5 text-rose-500"></i>
+          </div>
+          <span class="text-[10px] sm:text-xs font-semibold text-rose-500">胜率</span>
+        </div>
+        <div class="text-2xl sm:text-3xl font-bold font-mono text-slate-800"><span id="stat-rate">0</span><span class="text-base sm:text-lg text-slate-400">%</span></div>
+        <div class="text-xs sm:text-sm text-slate-500 mt-0.5 sm:mt-1">完成率</div>
+      </div>
+    </div>
+
+    <div class="grid lg:grid-cols-2 gap-4 sm:gap-6">
+      <!-- 最佳时间 -->
+      <div class="card p-4 sm:p-6">
+        <div class="flex items-center justify-between mb-4 sm:mb-5">
+          <h3 class="text-base sm:text-lg font-bold text-slate-800">最佳时间</h3>
+          <i data-lucide="medal" class="w-5 h-5 text-teal-600"></i>
+        </div>
+        <div id="best-times" class="space-y-2 sm:space-y-3"></div>
+      </div>
+
+      <!-- 历史记录 -->
+      <div class="card p-4 sm:p-6">
+        <div class="flex items-center justify-between mb-4 sm:mb-5">
+          <h3 class="text-base sm:text-lg font-bold text-slate-800">最近对局</h3>
+          <button id="clear-history" class="text-xs text-slate-400 hover:text-rose-500 transition flex items-center gap-1">
+            <i data-lucide="trash-2" class="w-3 h-3"></i>
+            <span>清空</span>
+          </button>
+        </div>
+        <div id="history-list" class="space-y-1 max-h-80 overflow-y-auto"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====== 设置 Tab ====== -->
+  <section id="tab-settings" class="tab-panel hidden">
+    <div class="max-w-3xl mx-auto space-y-4 sm:space-y-6">
+      <!-- 难度选择 -->
+      <div class="card p-4 sm:p-6">
+        <div class="flex items-center justify-between mb-4 sm:mb-5">
+          <div>
+            <h3 class="text-base sm:text-lg font-bold text-slate-800">难度选择</h3>
+            <p class="text-xs sm:text-sm text-slate-500 mt-0.5">选择适合你的挑战级别</p>
+          </div>
+          <i data-lucide="sliders-horizontal" class="w-5 h-5 text-teal-600"></i>
+        </div>
+        <div class="grid sm:grid-cols-2 gap-2.5 sm:gap-3" id="diff-grid">
+          <div class="diff-card" data-diff="easy">
+            <div class="flex items-start justify-between mb-2">
+              <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-emerald-50 flex items-center justify-center">
+                <i data-lucide="leaf" class="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600"></i>
+              </div>
+              <span class="badge badge-easy">入门</span>
+            </div>
+            <h4 class="font-bold text-slate-800 mb-1 text-sm sm:text-base">简单</h4>
+            <p class="text-xs text-slate-500 leading-relaxed">约 46 个提示数字，适合新手熟悉规则</p>
+          </div>
+          <div class="diff-card active" data-diff="medium">
+            <div class="flex items-start justify-between mb-2">
+              <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-amber-50 flex items-center justify-center">
+                <i data-lucide="flame" class="w-4 h-4 sm:w-5 sm:h-5 text-amber-600"></i>
+              </div>
+              <span class="badge badge-medium">普通</span>
+            </div>
+            <h4 class="font-bold text-slate-800 mb-1 text-sm sm:text-base">中等</h4>
+            <p class="text-xs text-slate-500 leading-relaxed">约 36 个提示数字，需要一些推理技巧</p>
+          </div>
+          <div class="diff-card" data-diff="hard">
+            <div class="flex items-start justify-between mb-2">
+              <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-rose-50 flex items-center justify-center">
+                <i data-lucide="mountain" class="w-4 h-4 sm:w-5 sm:h-5 text-rose-500"></i>
+              </div>
+              <span class="badge badge-hard">困难</span>
+            </div>
+            <h4 class="font-bold text-slate-800 mb-1 text-sm sm:text-base">困难</h4>
+            <p class="text-xs text-slate-500 leading-relaxed">约 29 个提示数字，需要高级推理策略</p>
+          </div>
+          <div class="diff-card" data-diff="expert">
+            <div class="flex items-start justify-between mb-2">
+              <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-violet-50 flex items-center justify-center">
+                <i data-lucide="zap" class="w-4 h-4 sm:w-5 sm:h-5 text-violet-600"></i>
+              </div>
+              <span class="badge badge-expert">大师</span>
+            </div>
+            <h4 class="font-bold text-slate-800 mb-1 text-sm sm:text-base">专家</h4>
+            <p class="text-xs text-slate-500 leading-relaxed">约 23 个提示数字，仅适合数独高手</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 游戏选项 -->
+      <div class="card p-4 sm:p-6">
+        <div class="flex items-center justify-between mb-4 sm:mb-5">
+          <div>
+            <h3 class="text-base sm:text-lg font-bold text-slate-800">游戏选项</h3>
+            <p class="text-xs sm:text-sm text-slate-500 mt-0.5">自定义你的游戏体验</p>
+          </div>
+          <i data-lucide="settings-2" class="w-5 h-5 text-teal-600"></i>
+        </div>
+        <div class="space-y-1">
+          <div class="history-row">
+            <div class="flex items-center gap-3 min-w-0">
+              <i data-lucide="check-circle" class="w-5 h-5 text-teal-600 flex-shrink-0"></i>
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-slate-800">错误检测</div>
+                <div class="text-xs text-slate-500">输入错误数字时立即提示</div>
+              </div>
+            </div>
+            <div class="switch on" data-setting="errorCheck"></div>
+          </div>
+          <div class="history-row">
+            <div class="flex items-center gap-3 min-w-0">
+              <i data-lucide="highlighter" class="w-5 h-5 text-teal-600 flex-shrink-0"></i>
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-slate-800">高亮相同数字</div>
+                <div class="text-xs text-slate-500">选中格子时高亮所有相同数字</div>
+              </div>
+            </div>
+            <div class="switch on" data-setting="highlightSame"></div>
+          </div>
+          <div class="history-row">
+            <div class="flex items-center gap-3 min-w-0">
+              <i data-lucide="rows-3" class="w-5 h-5 text-teal-600 flex-shrink-0"></i>
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-slate-800">高亮关联单元</div>
+                <div class="text-xs text-slate-500">高亮同行、同列、同宫格</div>
+              </div>
+            </div>
+            <div class="switch on" data-setting="highlightRelated"></div>
+          </div>
+          <div class="history-row">
+            <div class="flex items-center gap-3 min-w-0">
+              <i data-lucide="hash" class="w-5 h-5 text-teal-600 flex-shrink-0"></i>
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-slate-800">显示剩余数字</div>
+                <div class="text-xs text-slate-500">在数字按钮上显示每个数字剩余次数</div>
+              </div>
+            </div>
+            <div class="switch on" data-setting="showCount"></div>
+          </div>
+          <div class="history-row">
+            <div class="flex items-center gap-3 min-w-0">
+              <i data-lucide="ban" class="w-5 h-5 text-teal-600 flex-shrink-0"></i>
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-slate-800">错误上限</div>
+                <div class="text-xs text-slate-500">3 次错误后游戏结束</div>
+              </div>
+            </div>
+            <div class="switch on" data-setting="mistakeLimit"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 数据 -->
+      <div class="card p-4 sm:p-6">
+        <div class="flex items-center justify-between mb-4 sm:mb-5">
+          <div>
+            <h3 class="text-base sm:text-lg font-bold text-slate-800">数据管理</h3>
+            <p class="text-xs sm:text-sm text-slate-500 mt-0.5">所有数据保存在本地浏览器中</p>
+          </div>
+          <i data-lucide="database" class="w-5 h-5 text-teal-600"></i>
+        </div>
+        <div class="flex flex-wrap gap-2 sm:gap-3">
+          <button id="reset-stats" class="btn-secondary text-sm flex items-center gap-2">
+            <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+            重置统计
+          </button>
+          <button id="export-data" class="btn-secondary text-sm flex items-center gap-2">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            导出数据
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ====== 规则 Tab ====== -->
+  <section id="tab-rules" class="tab-panel hidden">
+    <div class="max-w-3xl mx-auto space-y-4 sm:space-y-6">
+      <div class="card p-5 sm:p-8">
+        <div class="flex items-center gap-3 mb-5 sm:mb-6">
+          <div class="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-br from-teal-400 to-teal-700 flex items-center justify-center shadow-lg shadow-teal-500/30 flex-shrink-0">
+            <i data-lucide="book-open" class="w-5 h-5 sm:w-6 sm:h-6 text-white"></i>
+          </div>
+          <div>
+            <h2 class="text-xl sm:text-2xl font-bold text-slate-800 tracking-tight">数独规则</h2>
+            <p class="text-xs sm:text-sm text-slate-500">经典数独游戏的目标与玩法</p>
+          </div>
+        </div>
+
+        <div class="space-y-4 sm:space-y-5">
+          <div class="flex gap-3 sm:gap-4">
+            <div class="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-teal-50 flex items-center justify-center font-mono font-bold text-teal-700 text-xs sm:text-sm">1</div>
+            <div>
+              <h4 class="font-semibold text-slate-800 mb-1 text-sm sm:text-base">基本目标</h4>
+              <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">在 9×9 的网格中填入数字 1-9，使得每行、每列和每个 3×3 宫格都包含 1-9 的所有数字，且不重复。</p>
+            </div>
+          </div>
+
+          <div class="flex gap-3 sm:gap-4">
+            <div class="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-teal-50 flex items-center justify-center font-mono font-bold text-teal-700 text-xs sm:text-sm">2</div>
+            <div>
+              <h4 class="font-semibold text-slate-800 mb-1 text-sm sm:text-base">初始数字</h4>
+              <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">每局开始时会给出一些预设数字（黑色加粗），这些数字不可修改。你需要根据这些线索推理出其余所有空格的数字。</p>
+            </div>
+          </div>
+
+          <div class="flex gap-3 sm:gap-4">
+            <div class="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-teal-50 flex items-center justify-center font-mono font-bold text-teal-700 text-xs sm:text-sm">3</div>
+            <div>
+              <h4 class="font-semibold text-slate-800 mb-1 text-sm sm:text-base">推理技巧</h4>
+              <ul class="text-xs sm:text-sm text-slate-600 leading-relaxed space-y-1.5 list-disc pl-5">
+                <li><span class="font-medium text-slate-700">唯一候选数</span>：如果某格只能填一个数字，那它必然是那个数字。</li>
+                <li><span class="font-medium text-slate-700">隐性唯一</span>：如果某数字在某行/列/宫只能填在一个位置，那它必然填在那里。</li>
+                <li><span class="font-medium text-slate-700">排除法</span>：根据已有数字排除不可能的位置。</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card p-5 sm:p-8">
+        <h3 class="text-base sm:text-lg font-bold text-slate-800 mb-3 sm:mb-4 flex items-center gap-2">
+          <i data-lucide="lightbulb" class="w-5 h-5 text-teal-600"></i>
+          游戏功能
+        </h3>
+        <div class="grid sm:grid-cols-2 gap-3 sm:gap-4">
+          <div class="p-3 sm:p-4 rounded-xl bg-teal-50/60 border border-teal-100">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="pencil" class="w-4 h-4 text-teal-700"></i>
+              <h4 class="font-semibold text-slate-800 text-sm">笔记模式</h4>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">在格子中记录候选数字，帮助你推理。当格子被填入正确数字时，关联笔记会自动清除。</p>
+          </div>
+          <div class="p-3 sm:p-4 rounded-xl bg-teal-50/60 border border-teal-100">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="lightbulb" class="w-4 h-4 text-teal-700"></i>
+              <h4 class="font-semibold text-slate-800 text-sm">提示功能</h4>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">每局有 3 次提示机会，选中空格后使用，会自动填入正确答案。</p>
+          </div>
+          <div class="p-3 sm:p-4 rounded-xl bg-teal-50/60 border border-teal-100">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="undo-2" class="w-4 h-4 text-teal-700"></i>
+              <h4 class="font-semibold text-slate-800 text-sm">撤销重做</h4>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">每一步操作都可撤销，支持多步回退和重做，无忧尝试。</p>
+          </div>
+          <div class="p-3 sm:p-4 rounded-xl bg-teal-50/60 border border-teal-100">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="highlighter" class="w-4 h-4 text-teal-700"></i>
+              <h4 class="font-semibold text-slate-800 text-sm">智能高亮</h4>
+            </div>
+            <p class="text-xs text-slate-600 leading-relaxed">自动高亮关联行列宫格与相同数字，让推理过程一目了然。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ========== 胜利模态框 ========== -->
+<div id="win-modal" class="modal-overlay">
+  <div class="modal-content modal-content card p-6 sm:p-8 max-w-sm w-full text-center">
+    <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-br from-teal-400 to-teal-700 flex items-center justify-center mx-auto mb-3 sm:mb-4 shadow-xl shadow-teal-500/40">
+      <i data-lucide="party-popper" class="w-8 h-8 sm:w-10 sm:h-10 text-white"></i>
+    </div>
+    <h2 class="text-xl sm:text-2xl font-bold text-slate-800 mb-1">恭喜完成！</h2>
+    <p class="text-xs sm:text-sm text-slate-500 mb-4 sm:mb-5">你成功解开了这道数独谜题</p>
+    <div class="grid grid-cols-3 gap-2 sm:gap-3 mb-4 sm:mb-6">
+      <div class="p-2 sm:p-3 rounded-xl bg-teal-50">
+        <div class="text-[9px] sm:text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">用时</div>
+        <div id="win-time" class="font-mono font-bold text-teal-700 text-sm sm:text-base">00:00</div>
+      </div>
+      <div class="p-2 sm:p-3 rounded-xl bg-teal-50">
+        <div class="text-[9px] sm:text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">错误</div>
+        <div id="win-mistakes" class="font-mono font-bold text-teal-700 text-sm sm:text-base">0</div>
+      </div>
+      <div class="p-2 sm:p-3 rounded-xl bg-teal-50">
+        <div class="text-[9px] sm:text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">难度</div>
+        <div id="win-diff" class="font-bold text-teal-700 text-xs sm:text-sm">中等</div>
+      </div>
+    </div>
+    <div class="flex gap-2">
+      <button id="win-close" class="btn-secondary text-sm flex-1">关闭</button>
+      <button id="win-new" class="btn-primary text-sm flex-1">再来一局</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 失败模态框 ========== -->
+<div id="lose-modal" class="modal-overlay">
+  <div class="modal-content card p-6 sm:p-8 max-w-sm w-full text-center">
+    <div class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-rose-50 flex items-center justify-center mx-auto mb-3 sm:mb-4">
+      <i data-lucide="frown" class="w-8 h-8 sm:w-10 sm:h-10 text-rose-500"></i>
+    </div>
+    <h2 class="text-xl sm:text-2xl font-bold text-slate-800 mb-1">游戏失败</h2>
+    <p class="text-xs sm:text-sm text-slate-500 mb-4 sm:mb-6">错误次数已达上限，再试一次吧</p>
+    <div class="flex gap-2">
+      <button id="lose-close" class="btn-secondary text-sm flex-1">查看棋盘</button>
+      <button id="lose-new" class="btn-primary text-sm flex-1">新游戏</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== Toast ========== -->
+<div id="toast" class="toast"></div>
+
+<script>
+// ===================================================================
+// 数独核心算法
+// ===================================================================
+const Sudoku = {
+  isValid(board, row, col, num) {
+    for (let i = 0; i < 9; i++) {
+      if (board[row][i] === num) return false;
+      if (board[i][col] === num) return false;
+    }
+    const sr = Math.floor(row / 3) * 3;
+    const sc = Math.floor(col / 3) * 3;
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        if (board[sr + i][sc + j] === num) return false;
+      }
+    }
+    return true;
+  },
+
+  fillBoard(board) {
+    for (let row = 0; row < 9; row++) {
+      for (let col = 0; col < 9; col++) {
+        if (board[row][col] === 0) {
+          const nums = [1,2,3,4,5,6,7,8,9].sort(() => Math.random() - 0.5);
+          for (const n of nums) {
+            if (this.isValid(board, row, col, n)) {
+              board[row][col] = n;
+              if (this.fillBoard(board)) return true;
+              board[row][col] = 0;
+            }
+          }
+          return false;
+        }
+      }
+    }
+    return true;
+  },
+
+  generate(difficulty = 'medium') {
+    const board = Array.from({length: 9}, () => Array(9).fill(0));
+    this.fillBoard(board);
+    const solution = board.map(r => [...r]);
+    const removeCounts = { easy: 35, medium: 45, hard: 52, expert: 58 };
+    const toRemove = removeCounts[difficulty] || 45;
+    const positions = [];
+    for (let i = 0; i < 9; i++) for (let j = 0; j < 9; j++) positions.push([i, j]);
+    positions.sort(() => Math.random() - 0.5);
+    let removed = 0;
+    for (const [r, c] of positions) {
+      if (removed >= toRemove) break;
+      board[r][c] = 0;
+      removed++;
+    }
+    return { puzzle: board, solution };
+  },
+
+  isComplete(board) {
+    for (let i = 0; i < 9; i++) {
+      for (let j = 0; j < 9; j++) {
+        if (board[i][j] === 0) return false;
+      }
+    }
+    return true;
+  }
+};
+
+// ===================================================================
+// 游戏状态
+// ===================================================================
+const DIFF_INFO = {
+  easy: { name: '简单', class: 'badge-easy', remove: 35 },
+  medium: { name: '中等', class: 'badge-medium', remove: 45 },
+  hard: { name: '困难', class: 'badge-hard', remove: 52 },
+  expert: { name: '专家', class: 'badge-expert', remove: 58 }
+};
+
+const settings = {
+  errorCheck: true,
+  highlightSame: true,
+  highlightRelated: true,
+  showCount: true,
+  mistakeLimit: true
+};
+
+let state = null;
+
+function loadStats() {
+  try {
+    const s = localStorage.getItem('sudomatic-stats');
+    if (s) return JSON.parse(s);
+  } catch (e) {}
+  return {
+    played: 0,
+    won: 0,
+    streak: 0,
+    bestTimes: { easy: null, medium: null, hard: null, expert: null },
+    history: []
+  };
+}
+
+function saveStats() {
+  try { localStorage.setItem('sudomatic-stats', JSON.stringify(stats)); } catch (e) {}
+}
+
+const stats = loadStats();
+
+// ===================================================================
+// DOM 引用
+// ===================================================================
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+const boardEl = $('#board');
+const numPad = $('#num-pad');
+
+// ===================================================================
+// 初始化游戏
+// ===================================================================
+function newGame(difficulty = state?.difficulty || 'medium') {
+  showToast('正在生成数独…');
+  setTimeout(() => {
+    const { puzzle, solution } = Sudoku.generate(difficulty);
+    state = {
+      difficulty,
+      puzzle: puzzle.map(r => [...r]),
+      solution: solution.map(r => [...r]),
+      current: puzzle.map(r => [...r]),
+      notes: Array.from({length: 9}, () => Array.from({length: 9}, () => new Set())),
+      selected: null,
+      noteMode: false,
+      mistakes: 0,
+      hintsLeft: 3,
+      history: [],
+      historyIndex: -1,
+      startTime: Date.now(),
+      elapsedTime: 0,
+      timerInterval: null,
+      paused: false,
+      gameOver: false,
+      won: false
+    };
+    renderBoard();
+    updateAllUI();
+    startTimer();
+    showToast('新游戏已开始');
+  }, 50);
+}
+
+// ===================================================================
+// 渲染棋盘
+// ===================================================================
+function renderBoard() {
+  boardEl.innerHTML = '';
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const cell = document.createElement('div');
+      cell.className = 'sudoku-cell';
+      cell.dataset.row = r;
+      cell.dataset.col = c;
+      cell.addEventListener('click', () => selectCell(r, c));
+      boardEl.appendChild(cell);
+    }
+  }
+  updateBoard();
+}
+
+function getCellEl(r, c) {
+  return boardEl.children[r * 9 + c];
+}
+
+function updateBoard() {
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const cell = getCellEl(r, c);
+      const val = state.current[r][c];
+      const isInitial = state.puzzle[r][c] !== 0;
+      cell.className = 'sudoku-cell';
+      cell.dataset.row = r;
+      cell.dataset.col = c;
+      cell.innerHTML = '';
+
+      if (val !== 0) {
+        const span = document.createElement('span');
+        span.textContent = val;
+        cell.appendChild(span);
+        if (isInitial) cell.classList.add('cell-initial');
+        else cell.classList.add('cell-user');
+      } else if (state.notes[r][c].size > 0) {
+        const grid = document.createElement('div');
+        grid.className = 'notes-grid';
+        for (let n = 1; n <= 9; n++) {
+          const s = document.createElement('span');
+          if (state.notes[r][c].has(n)) s.textContent = n;
+          grid.appendChild(s);
+        }
+        cell.appendChild(grid);
+      }
+    }
+  }
+  applyHighlights();
+}
+
+function applyHighlights() {
+  $$('.sudoku-cell').forEach(c => {
+    c.classList.remove('cell-related', 'cell-same-num', 'cell-selected', 'cell-error', 'cell-hint');
+  });
+
+  if (settings.errorCheck) {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const v = state.current[r][c];
+        if (v !== 0 && state.puzzle[r][c] === 0 && v !== state.solution[r][c]) {
+          getCellEl(r, c).classList.add('cell-error');
+        }
+      }
+    }
+  }
+
+  if (!state.selected) return;
+  const { row, col } = state.selected;
+  const selVal = state.current[row][col];
+
+  getCellEl(row, col).classList.add('cell-selected');
+
+  if (settings.highlightRelated) {
+    for (let i = 0; i < 9; i++) {
+      if (i !== col) getCellEl(row, i).classList.add('cell-related');
+      if (i !== row) getCellEl(i, col).classList.add('cell-related');
+    }
+    const sr = Math.floor(row / 3) * 3;
+    const sc = Math.floor(col / 3) * 3;
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const r = sr + i, c = sc + j;
+        if (r !== row || c !== col) getCellEl(r, c).classList.add('cell-related');
+      }
+    }
+  }
+
+  if (settings.highlightSame && selVal !== 0) {
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if ((r !== row || c !== col) && state.current[r][c] === selVal) {
+          getCellEl(r, c).classList.add('cell-same-num');
+        }
+      }
+    }
+  }
+
+  if (settings.highlightSame && selVal !== 0) {
+    $$('.notes-grid').forEach(grid => {
+      grid.querySelectorAll('span').forEach((s, idx) => {
+        if (idx + 1 === selVal && s.textContent) s.classList.add('highlight');
+      });
+    });
+  }
+}
+
+// ===================================================================
+// 选择格子
+// ===================================================================
+function selectCell(r, c) {
+  if (state.gameOver || state.paused) return;
+  state.selected = { row: r, col: c };
+  applyHighlights();
+}
+
+// ===================================================================
+// 输入数字
+// ===================================================================
+function inputNumber(num) {
+  if (!state.selected || state.gameOver || state.paused) return;
+  const { row, col } = state.selected;
+  if (state.puzzle[row][col] !== 0) {
+    showToast('该格不可修改');
+    return;
+  }
+
+  const prevState = {
+    row, col,
+    value: state.current[row][col],
+    notes: new Set(state.notes[row][col])
+  };
+
+  if (state.noteMode) {
+    if (state.current[row][col] !== 0) return;
+    if (state.notes[row][col].has(num)) state.notes[row][col].delete(num);
+    else state.notes[row][col].add(num);
+  } else {
+    if (state.current[row][col] === num) {
+      state.current[row][col] = 0;
+    } else {
+      state.current[row][col] = num;
+      state.notes[row][col].clear();
+      clearRelatedNotes(row, col, num);
+      if (settings.errorCheck && num !== state.solution[row][col]) {
+        state.mistakes++;
+        const cell = getCellEl(row, col);
+        cell.classList.add('cell-error');
+        setTimeout(() => cell.classList.remove('cell-error'), 400);
+        if (settings.mistakeLimit && state.mistakes >= 3) {
+          gameOver(false);
+          return;
+        }
+      }
+    }
+  }
+
+  pushHistory(prevState);
+  updateBoard();
+  const cell = getCellEl(row, col);
+  cell.classList.add('cell-pop');
+  setTimeout(() => cell.classList.remove('cell-pop'), 250);
+  updateAllUI();
+  
+  if (Sudoku.isComplete(state.current)) {
+    if (checkWin()) {
+      gameOver(true);
+    }
+  }
+}
+
+function clearRelatedNotes(row, col, num) {
+  for (let i = 0; i < 9; i++) {
+    state.notes[row][i].delete(num);
+    state.notes[i][col].delete(num);
+  }
+  const sr = Math.floor(row / 3) * 3;
+  const sc = Math.floor(col / 3) * 3;
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      state.notes[sr + i][sc + j].delete(num);
+    }
+  }
+}
+
+function checkWin() {
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (state.current[r][c] !== state.solution[r][c]) return false;
+    }
+  }
+  return true;
+}
+
+// ===================================================================
+// 擦除
+// ===================================================================
+function eraseCell() {
+  if (!state.selected || state.gameOver || state.paused) return;
+  const { row, col } = state.selected;
+  if (state.puzzle[row][col] !== 0) return;
+  if (state.current[row][col] === 0 && state.notes[row][col].size === 0) return;
+  
+  const prevState = {
+    row, col,
+    value: state.current[row][col],
+    notes: new Set(state.notes[row][col])
+  };
+  
+  state.current[row][col] = 0;
+  state.notes[row][col].clear();
+  pushHistory(prevState);
+  updateBoard();
+  updateAllUI();
+}
+
+// ===================================================================
+// 历史记录（撤销/重做）
+// ===================================================================
+function pushHistory(prevState) {
+  state.history = state.history.slice(0, state.historyIndex + 1);
+  state.history.push(prevState);
+  state.historyIndex = state.history.length - 1;
+  if (state.history.length > 100) {
+    state.history.shift();
+    state.historyIndex--;
+  }
+}
+
+function undo() {
+  if (state.historyIndex < 0 || state.gameOver || state.paused) return;
+  const h = state.history[state.historyIndex];
+  const curState = {
+    row: h.row, col: h.col,
+    value: state.current[h.row][h.col],
+    notes: new Set(state.notes[h.row][h.col])
+  };
+  state.current[h.row][h.col] = h.value;
+  state.notes[h.row][h.col] = h.notes;
+  state.history[state.historyIndex] = curState;
+  state.historyIndex--;
+  updateBoard();
+  updateAllUI();
+  showToast('已撤销');
+}
+
+function redo() {
+  if (state.historyIndex >= state.history.length - 1 || state.gameOver || state.paused) return;
+  state.historyIndex++;
+  const h = state.history[state.historyIndex];
+  const curState = {
+    row: h.row, col: h.col,
+    value: state.current[h.row][h.col],
+    notes: new Set(state.notes[h.row][h.col])
+  };
+  state.current[h.row][h.col] = h.value;
+  state.notes[h.row][h.col] = h.notes;
+  state.history[state.historyIndex] = curState;
+  updateBoard();
+  updateAllUI();
+  showToast('已重做');
+}
+
+// ===================================================================
+// 提示
+// ===================================================================
+function useHint() {
+  if (state.gameOver || state.paused) return;
+  if (state.hintsLeft <= 0) {
+    showToast('提示次数已用完');
+    return;
+  }
+  if (!state.selected) {
+    showToast('请先选择一个空格');
+    return;
+  }
+  const { row, col } = state.selected;
+  if (state.puzzle[row][col] !== 0) {
+    showToast('该格已是初始数字');
+    return;
+  }
+  if (state.current[row][col] === state.solution[row][col]) {
+    showToast('该格已正确');
+    return;
+  }
+  
+  const prevState = {
+    row, col,
+    value: state.current[row][col],
+    notes: new Set(state.notes[row][col])
+  };
+  
+  state.current[row][col] = state.solution[row][col];
+  state.notes[row][col].clear();
+  clearRelatedNotes(row, col, state.solution[row][col]);
+  pushHistory(prevState);
+  state.hintsLeft--;
+  
+  updateBoard();
+  const cell = getCellEl(row, col);
+  cell.classList.add('cell-hint');
+  setTimeout(() => cell.classList.remove('cell-hint'), 600);
+  
+  updateAllUI();
+  showToast('已使用提示');
+  
+  if (Sudoku.isComplete(state.current) && checkWin()) {
+    gameOver(true);
+  }
+}
+
+// ===================================================================
+// 计时器
+// ===================================================================
+function startTimer() {
+  if (state.timerInterval) clearInterval(state.timerInterval);
+  state.startTime = Date.now() - state.elapsedTime * 1000;
+  state.timerInterval = setInterval(() => {
+    if (!state.paused && !state.gameOver) {
+      state.elapsedTime = Math.floor((Date.now() - state.startTime) / 1000);
+      updateTimerUI();
+    }
+  }, 1000);
+}
+
+function formatTime(sec) {
+  const m = Math.floor(sec / 60).toString().padStart(2, '0');
+  const s = (sec % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function updateTimerUI() {
+  const t = formatTime(state.elapsedTime);
+  $('#header-timer').textContent = t;
+  $('#info-timer').textContent = t;
+}
+
+// ===================================================================
+// 暂停
+// ===================================================================
+function togglePause() {
+  if (state.gameOver) return;
+  state.paused = !state.paused;
+  if (state.paused) {
+    $('#pause-overlay').classList.add('show');
+    $('#pause-btn').innerHTML = '<i data-lucide="play" class="w-4 h-4"></i><span class="hidden sm:inline">继续</span>';
+    lucide.createIcons();
+  } else {
+    state.startTime = Date.now() - state.elapsedTime * 1000;
+    $('#pause-overlay').classList.remove('show');
+    $('#pause-btn').innerHTML = '<i data-lucide="pause" class="w-4 h-4"></i><span class="hidden sm:inline">暂停</span>';
+    lucide.createIcons();
+  }
+}
+
+// ===================================================================
+// 游戏结束
+// ===================================================================
+function gameOver(won) {
+  state.gameOver = true;
+  state.won = won;
+  clearInterval(state.timerInterval);
+  
+  if (won) {
+    stats.played++;
+    stats.won++;
+    stats.streak++;
+    const bt = stats.bestTimes[state.difficulty];
+    if (bt === null || state.elapsedTime < bt) {
+      stats.bestTimes[state.difficulty] = state.elapsedTime;
+    }
+    stats.history.unshift({
+      diff: state.difficulty,
+      time: state.elapsedTime,
+      mistakes: state.mistakes,
+      won: true,
+      date: Date.now()
+    });
+    if (stats.history.length > 50) stats.history = stats.history.slice(0, 50);
+    saveStats();
+    
+    $('#win-time').textContent = formatTime(state.elapsedTime);
+    $('#win-mistakes').textContent = state.mistakes;
+    $('#win-diff').textContent = DIFF_INFO[state.difficulty].name;
+    setTimeout(() => {
+      $('#win-modal').classList.add('show');
+      launchConfetti();
+    }, 400);
+  } else {
+    stats.played++;
+    stats.streak = 0;
+    stats.history.unshift({
+      diff: state.difficulty,
+      time: state.elapsedTime,
+      mistakes: state.mistakes,
+      won: false,
+      date: Date.now()
+    });
+    if (stats.history.length > 50) stats.history = stats.history.slice(0, 50);
+    saveStats();
+    setTimeout(() => $('#lose-modal').classList.add('show'), 400);
+  }
+  
+  updateStatsUI();
+}
+
+// ===================================================================
+// 庆祝粒子
+// ===================================================================
+function launchConfetti() {
+  const colors = ['#14b8a6', '#0d9488', '#5eead4', '#fbbf24', '#f43f5e', '#a855f7'];
+  for (let i = 0; i < 80; i++) {
+    setTimeout(() => {
+      const c = document.createElement('div');
+      c.className = 'confetti';
+      c.style.left = Math.random() * 100 + '%';
+      c.style.background = colors[Math.floor(Math.random() * colors.length)];
+      c.style.animationDuration = (2 + Math.random() * 2) + 's';
+      c.style.transform = `rotate(${Math.random() * 360}deg)`;
+      document.body.appendChild(c);
+      setTimeout(() => c.remove(), 4500);
+    }, i * 30);
+  }
+}
+
+// ===================================================================
+// 数字面板
+// ===================================================================
+function renderNumPad() {
+  numPad.innerHTML = '';
+  for (let n = 1; n <= 9; n++) {
+    const btn = document.createElement('button');
+    btn.className = 'num-btn';
+    btn.innerHTML = `<span>${n}</span><span class="count" data-num="${n}">9</span>`;
+    btn.addEventListener('click', () => inputNumber(n));
+    numPad.appendChild(btn);
+  }
+  const erase = document.createElement('button');
+  erase.className = 'num-btn';
+  erase.innerHTML = '<i data-lucide="eraser" class="w-5 h-5"></i>';
+  erase.addEventListener('click', eraseCell);
+  numPad.appendChild(erase);
+  lucide.createIcons();
+}
+
+function updateNumPad() {
+  const counts = Array(10).fill(0);
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      counts[state.current[r][c]]++;
+    }
+  }
+  for (let n = 1; n <= 9; n++) {
+    const remaining = 9 - counts[n];
+    const btn = numPad.children[n - 1];
+    const countEl = btn.querySelector('.count');
+    countEl.textContent = remaining;
+    btn.disabled = remaining <= 0 && !state.noteMode;
+    if (settings.showCount) {
+      countEl.style.display = '';
+    } else {
+      countEl.style.display = 'none';
+    }
+  }
+}
+
+// ===================================================================
+// 更新所有 UI
+// ===================================================================
+function updateAllUI() {
+  updateTimerUI();
+  $('#info-mistakes').textContent = state.mistakes;
+  $('#header-mistakes').textContent = `${state.mistakes}/3`;
+  
+  let filled = 0, total = 0;
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (state.puzzle[r][c] === 0) {
+        total++;
+        if (state.current[r][c] !== 0) filled++;
+      }
+    }
+  }
+  const progress = total > 0 ? Math.round((filled / total) * 100) : 0;
+  $('#info-progress').textContent = progress;
+  
+  const diffInfo = DIFF_INFO[state.difficulty];
+  $('#info-diff').textContent = diffInfo.name;
+  const badge = $('#diff-badge');
+  badge.textContent = diffInfo.name;
+  badge.className = 'badge ' + diffInfo.class;
+  
+  $('#hints-left').textContent = state.hintsLeft;
+  $('#tool-hint').disabled = state.hintsLeft <= 0;
+  
+  const noteBtn = $('#tool-note');
+  if (state.noteMode) noteBtn.classList.add('active');
+  else noteBtn.classList.remove('active');
+  
+  $('#tool-undo').disabled = state.historyIndex < 0;
+  $('#tool-redo').disabled = state.historyIndex >= state.history.length - 1;
+  
+  updateNumPad();
+}
+
+// ===================================================================
+// 统计 UI
+// ===================================================================
+function updateStatsUI() {
+  $('#stat-played').textContent = stats.played;
+  $('#stat-won').textContent = stats.won;
+  $('#stat-streak').textContent = stats.streak;
+  const rate = stats.played > 0 ? Math.round((stats.won / stats.played) * 100) : 0;
+  $('#stat-rate').textContent = rate;
+  
+  const btContainer = $('#best-times');
+  btContainer.innerHTML = '';
+  const diffs = ['easy', 'medium', 'hard', 'expert'];
+  diffs.forEach(d => {
+    const info = DIFF_INFO[d];
+    const time = stats.bestTimes[d];
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:bg-teal-50 transition';
+    row.innerHTML = `
+      <div class="flex items-center gap-3">
+        <span class="badge ${info.class}">${info.name}</span>
+      </div>
+      <div class="font-mono font-bold text-slate-800 ${time === null ? 'opacity-30' : ''}">
+        ${time === null ? '--:--' : formatTime(time)}
+      </div>
+    `;
+    btContainer.appendChild(row);
+  });
+  
+  const histContainer = $('#history-list');
+  if (stats.history.length === 0) {
+    histContainer.innerHTML = `
+      <div class="text-center py-12 text-slate-400">
+        <i data-lucide="inbox" class="w-10 h-10 mx-auto mb-2 opacity-50"></i>
+        <div class="text-sm">暂无对局记录</div>
+      </div>
+    `;
+  } else {
+    histContainer.innerHTML = '';
+    stats.history.slice(0, 20).forEach(h => {
+      const info = DIFF_INFO[h.diff];
+      const row = document.createElement('div');
+      row.className = 'history-row';
+      const date = new Date(h.date);
+      const dateStr = `${(date.getMonth()+1).toString().padStart(2,'0')}/${date.getDate().toString().padStart(2,'0')} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
+      row.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${h.won ? 'bg-emerald-50' : 'bg-rose-50'}">
+            <i data-lucide="${h.won ? 'check' : 'x'}" class="w-4 h-4 ${h.won ? 'text-emerald-600' : 'text-rose-500'}"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="badge ${info.class}">${info.name}</span>
+              <span class="text-xs text-slate-400">${dateStr}</span>
+            </div>
+            <div class="text-xs text-slate-500 mt-0.5">错误 ${h.mistakes}</div>
+          </div>
+        </div>
+        <div class="font-mono font-semibold text-slate-700 text-sm flex-shrink-0">${h.won ? formatTime(h.time) : '未完成'}</div>
+      `;
+      histContainer.appendChild(row);
+    });
+  }
+  lucide.createIcons();
+}
+
+// ===================================================================
+// Toast
+// ===================================================================
+let toastTimer = null;
+function showToast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+// ===================================================================
+// Tab 切换
+// ===================================================================
+function switchTab(tabName) {
+  $$('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tabName));
+  $$('.tab-panel').forEach(p => p.classList.add('hidden'));
+  const panel = $(`#tab-${tabName}`);
+  panel.classList.remove('hidden');
+  panel.style.animation = 'none';
+  panel.offsetHeight;
+  panel.style.animation = '';
+  
+  if (tabName === 'stats') updateStatsUI();
+}
+
+// ===================================================================
+// 键盘事件
+// ===================================================================
+document.addEventListener('keydown', (e) => {
+  if (!state || state.gameOver) return;
+  
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    e.preventDefault();
+    undo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'Z'))) {
+    e.preventDefault();
+    redo();
+    return;
+  }
+  
+  if (state.paused) return;
+  
+  if (/^[1-9]$/.test(e.key)) {
+    inputNumber(parseInt(e.key));
+    return;
+  }
+  
+  if (e.key.startsWith('Arrow')) {
+    e.preventDefault();
+    if (!state.selected) {
+      selectCell(0, 0);
+      return;
+    }
+    let { row, col } = state.selected;
+    if (e.key === 'ArrowUp') row = Math.max(0, row - 1);
+    if (e.key === 'ArrowDown') row = Math.min(8, row + 1);
+    if (e.key === 'ArrowLeft') col = Math.max(0, col - 1);
+    if (e.key === 'ArrowRight') col = Math.min(8, col + 1);
+    selectCell(row, col);
+    return;
+  }
+  
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    e.preventDefault();
+    eraseCell();
+    return;
+  }
+  
+  if (e.key === 'n' || e.key === 'N') {
+    state.noteMode = !state.noteMode;
+    updateAllUI();
+    showToast(state.noteMode ? '笔记模式开启' : '笔记模式关闭');
+    return;
+  }
+  
+  if (e.key === 'h' || e.key === 'H') {
+    useHint();
+    return;
+  }
+  
+  if (e.key === ' ' || e.key === 'p' || e.key === 'P') {
+    e.preventDefault();
+    togglePause();
+    return;
+  }
+});
+
+// ===================================================================
+// 事件绑定
+// ===================================================================
+function bindEvents() {
+  $$('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+  
+  $('#tool-undo').addEventListener('click', undo);
+  $('#tool-redo').addEventListener('click', redo);
+  $('#tool-erase').addEventListener('click', eraseCell);
+  $('#tool-note').addEventListener('click', () => {
+    state.noteMode = !state.noteMode;
+    updateAllUI();
+    showToast(state.noteMode ? '笔记模式开启' : '笔记模式关闭');
+  });
+  $('#tool-hint').addEventListener('click', useHint);
+  
+  $('#pause-btn').addEventListener('click', togglePause);
+  $('#resume-btn').addEventListener('click', togglePause);
+  
+  $('#new-game-header').addEventListener('click', () => newGame(state.difficulty));
+  
+  $$('.diff-card').forEach(card => {
+    card.addEventListener('click', () => {
+      $$('.diff-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      const diff = card.dataset.diff;
+      if (confirm(`开始新的 ${DIFF_INFO[diff].name} 难度游戏？`)) {
+        newGame(diff);
+        switchTab('game');
+      }
+    });
+  });
+  
+  $$('.switch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      const key = sw.dataset.setting;
+      settings[key] = !settings[key];
+      sw.classList.toggle('on', settings[key]);
+      if (state) {
+        updateBoard();
+        updateAllUI();
+      }
+    });
+  });
+  
+  $('#win-close').addEventListener('click', () => $('#win-modal').classList.remove('show'));
+  $('#win-new').addEventListener('click', () => {
+    $('#win-modal').classList.remove('show');
+    newGame(state.difficulty);
+  });
+  $('#lose-close').addEventListener('click', () => $('#lose-modal').classList.remove('show'));
+  $('#lose-new').addEventListener('click', () => {
+    $('#lose-modal').classList.remove('show');
+    newGame(state.difficulty);
+  });
+  
+  $('#clear-history').addEventListener('click', () => {
+    if (confirm('确定清空所有历史记录？')) {
+      stats.history = [];
+      saveStats();
+      updateStatsUI();
+      showToast('已清空历史记录');
+    }
+  });
+  
+  $('#reset-stats').addEventListener('click', () => {
+    if (confirm('确定重置所有统计数据？此操作不可撤销。')) {
+      stats.played = 0;
+      stats.won = 0;
+      stats.streak = 0;
+      stats.bestTimes = { easy: null, medium: null, hard: null, expert: null };
+      stats.history = [];
+      saveStats();
+      updateStatsUI();
+      showToast('统计数据已重置');
+    }
+  });
+  
+  $('#export-data').addEventListener('click', () => {
+    const data = JSON.stringify({ stats, settings }, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `sudomatic-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('数据已导出');
+  });
+}
+
+// ===================================================================
+// 启动
+// ===================================================================
+function init() {
+  renderNumPad();
+  bindEvents();
+  newGame('medium');
+  lucide.createIcons();
+}
+
+init();
+</script>
+</body>
+</html>
