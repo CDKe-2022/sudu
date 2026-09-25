@@ -1,366 +1,1121 @@
 /**
- * Telegram MTProto over WebSocket
- * Cloudflare Worker V0.3
+
+ * Telegram Cloudflare WebSocket Relay
+
  *
+
+ * V0.3.1
+
+ *
+
  * Domain:
+
  *   tg.cdfcc.kdns.fr
+
  *
+
  * Routes:
+
  *   /
+
  *   /health
+
  *   /apiws
+
  *   /mtproto
+
  *
+
  * Architecture:
+
  *
+
  * Browser
- *   ↓ WSS
+
+ *    ↓ WSS
+
  * Cloudflare Worker
- *   ↓ TCP :443
+
+ *    ↓ TCP :443
+
  * Telegram DC2
+
+ *
+
+ * IMPORTANT:
+
+ * This version is a transparent WebSocket ↔ TCP relay.
+
+ * It does NOT implement MTProto encryption/authentication.
+
  */
 
+/* =========================================================
+
+ * Telegram DC
+
+ * ======================================================= */
+
 const TELEGRAM_DCS = {
+
   1: [
+
     "149.154.175.50",
-    "149.154.175.51",
+
+    "149.154.175.51"
+
   ],
 
   2: [
+
     "149.154.167.50",
+
     "149.154.167.41",
-    "149.154.167.220",
+
+    "149.154.167.220"
+
   ],
 
   3: [
+
     "149.154.175.100",
-    "149.154.167.91",
+
+    "149.154.167.91"
+
   ],
 
   4: [
+
     "149.154.167.92",
-    "149.154.165.111",
+
+    "149.154.165.111"
+
   ],
 
   5: [
+
     "91.108.56.100",
-    "91.108.56.101",
-  ],
+
+    "91.108.56.101"
+
+  ]
+
 };
+
+/* =========================================================
+
+ * Default DC
+
+ * ======================================================= */
 
 const DEFAULT_DC = 2;
 
+/* =========================================================
+
+ * Worker
+
+ * ======================================================= */
+
 export default {
+
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
+
+    const url =
+
+      new URL(request.url);
+
+    /* -----------------------------------------------------
+
+     * Homepage
+
+     * --------------------------------------------------- */
 
     if (url.pathname === "/") {
-      return new Response(ROOT_HTML, {
-        headers: {
-          "content-type": "text/html; charset=UTF-8",
-          "cache-control": "no-store",
-        },
-      });
+
+      return new Response(
+
+        ROOT_HTML,
+
+        {
+
+          status: 200,
+
+          headers: {
+
+            "content-type":
+
+              "text/html; charset=UTF-8",
+
+            "cache-control":
+
+              "no-store"
+
+          }
+
+        }
+
+      );
+
     }
+
+    /* -----------------------------------------------------
+
+     * Health
+
+     * --------------------------------------------------- */
 
     if (url.pathname === "/health") {
+
       return json({
+
         ok: true,
-        service: "telegram-mtproto-cloudflare",
-        version: "V0.3",
-        websocket: true,
-        tcp: true,
-        defaultDC: DEFAULT_DC,
-        timestamp: new Date().toISOString(),
+
+        service:
+
+          "telegram-cloudflare-relay",
+
+        version:
+
+          "V0.3.1",
+
+        websocket:
+
+          true,
+
+        tcp:
+
+          true,
+
+        defaultDC:
+
+          DEFAULT_DC,
+
+        timestamp:
+
+          new Date().toISOString()
+
       });
+
     }
+
+    /* -----------------------------------------------------
+
+     * MTProto test page
+
+     * --------------------------------------------------- */
 
     if (url.pathname === "/mtproto") {
-      return new Response(MTPROTO_HTML, {
-        headers: {
-          "content-type": "text/html; charset=UTF-8",
-          "cache-control": "no-store",
-        },
-      });
+
+      return new Response(
+
+        MTPROTO_HTML,
+
+        {
+
+          status: 200,
+
+          headers: {
+
+            "content-type":
+
+              "text/html; charset=UTF-8",
+
+            "cache-control":
+
+              "no-store"
+
+          }
+
+        }
+
+      );
+
     }
+
+    /* -----------------------------------------------------
+
+     * WebSocket relay
+
+     * --------------------------------------------------- */
 
     if (url.pathname === "/apiws") {
-      return handleWebSocket(request);
+
+      return handleWebSocket(
+
+        request
+
+      );
+
     }
 
-    return new Response("Not Found", {
-      status: 404,
-      headers: {
-        "content-type": "text/plain; charset=UTF-8",
-      },
-    });
-  },
+    /* -----------------------------------------------------
+
+     * 404
+
+     * --------------------------------------------------- */
+
+    return new Response(
+
+      "Not Found",
+
+      {
+
+        status: 404,
+
+        headers: {
+
+          "content-type":
+
+            "text/plain; charset=UTF-8"
+
+        }
+
+      }
+
+    );
+
+  }
+
 };
 
-
 /* =========================================================
- * WebSocket → Telegram TCP
- * =======================================================*/
+
+ * WebSocket handler
+
+ * ======================================================= */
 
 async function handleWebSocket(request) {
-  if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
-    return new Response("Expected WebSocket", {
-      status: 426,
-      headers: {
-        "upgrade": "websocket",
-      },
-    });
+
+  /* -------------------------------------------------------
+
+   * Check WebSocket upgrade
+
+   * ----------------------------------------------------- */
+
+  const upgrade =
+
+    request.headers.get("Upgrade");
+
+  if (
+
+    !upgrade ||
+
+    upgrade.toLowerCase() !== "websocket"
+
+  ) {
+
+    return new Response(
+
+      "Expected WebSocket",
+
+      {
+
+        status: 426,
+
+        headers: {
+
+          "Upgrade":
+
+            "websocket"
+
+        }
+
+      }
+
+    );
+
   }
 
-  const pair = new WebSocketPair();
+  /* -------------------------------------------------------
 
-  const client = pair[0];
-  const server = pair[1];
+   * Parse DC
 
-  const protocol = request.headers.get(
-    "Sec-WebSocket-Protocol"
-  );
+   * ----------------------------------------------------- */
 
-  const selectedProtocol =
-    protocol
-      ?.split(",")
-      .map(x => x.trim())
-      .find(x => x === "binary");
+  const url =
 
-  server.accept({
-    allowHalfOpen: true,
-  });
+    new URL(request.url);
 
-  // Telegram DC
-  const url = new URL(request.url);
+  let dc =
 
-  let dc = Number(
-    url.searchParams.get("dc") || DEFAULT_DC
-  );
+    Number(
+
+      url.searchParams.get("dc")
+
+      || DEFAULT_DC
+
+    );
 
   if (!TELEGRAM_DCS[dc]) {
-    dc = DEFAULT_DC;
+
+    dc =
+
+      DEFAULT_DC;
+
   }
 
-  const hosts = TELEGRAM_DCS[dc];
+  /* -------------------------------------------------------
 
-  // 当前先固定第一个地址
-  const hostname = hosts[0];
+   * Select Telegram server
+
+   *
+
+   * 当前使用第一个地址。
+
+   * 后续可以加入自动故障转移。
+
+   * ----------------------------------------------------- */
+
+  const hostname =
+
+    TELEGRAM_DCS[dc][0];
+
+  /* -------------------------------------------------------
+
+   * Create WebSocket pair
+
+   * ----------------------------------------------------- */
+
+  const pair =
+
+    new WebSocketPair();
+
+  const client =
+
+    pair[0];
+
+  const server =
+
+    pair[1];
+
+  /* -------------------------------------------------------
+
+   * Accept WebSocket
+
+   *
+
+   * 不手动设置
+
+   * Sec-WebSocket-Protocol
+
+   *
+
+   * 先保证标准 WebSocket handshake。
+
+   * ----------------------------------------------------- */
+
+  server.accept({
+
+    allowHalfOpen: true
+
+  });
+
+  /* -------------------------------------------------------
+
+   * Connect Telegram TCP
+
+   * ----------------------------------------------------- */
 
   let socket;
 
   try {
-    socket = connectTelegram(hostname);
-  } catch (error) {
-    safeClose(server, 1011, "TCP connect failed");
 
-    return new Response(null, {
-      status: 101,
-      webSocket: client,
-    });
+    socket =
+
+      connect({
+
+        hostname:
+
+          hostname,
+
+        port:
+
+          443,
+
+        secureTransport:
+
+          "off",
+
+        allowHalfOpen:
+
+          true
+
+      });
+
+  } catch (error) {
+
+    console.error(
+
+      "TCP connect error:",
+
+      error
+
+    );
+
+    try {
+
+      server.close(
+
+        1011,
+
+        "TCP connection failed"
+
+      );
+
+    } catch {}
+
+    return new Response(
+
+      null,
+
+      {
+
+        status: 101,
+
+        webSocket: client
+
+      }
+
+    );
+
   }
 
-  let closed = false;
+  /* -------------------------------------------------------
 
-  const closeAll = () => {
-    if (closed) return;
+   * Relay state
 
-    closed = true;
+   * ----------------------------------------------------- */
 
-    try {
-      socket.close();
-    } catch {}
+  let stopped =
 
-    try {
-      server.close();
-    } catch {}
-  };
+    false;
 
-  server.addEventListener("message", async event => {
-    if (closed) return;
+  /* -------------------------------------------------------
 
-    try {
-      let data;
+   * Close everything
 
-      if (typeof event.data === "string") {
-        data = new TextEncoder().encode(event.data);
-      } else {
-        data = new Uint8Array(event.data);
-      }
+   * ----------------------------------------------------- */
 
-      if (!data.length) return;
+  async function closeEverything(
 
-      const writer = socket.writable.getWriter();
+    code = 1000,
 
-      try {
-        await writer.write(data);
-      } finally {
-        writer.releaseLock();
-      }
-    } catch (error) {
-      console.error("WS → TCP error:", error);
+    reason = "closed"
 
-      safeClose(server, 1011, "TCP write failed");
+  ) {
 
-      try {
-        socket.close();
-      } catch {}
+    if (stopped) {
+
+      return;
+
     }
-  });
 
-  server.addEventListener("close", closeAll);
-  server.addEventListener("error", closeAll);
+    stopped =
 
-  // TCP → WebSocket
-  (async () => {
+      true;
+
     try {
-      const reader = socket.readable.getReader();
 
-      while (!closed) {
-        const { value, done } = await reader.read();
+      socket.close();
 
-        if (done) break;
+    } catch {}
 
-        if (value && value.length) {
-          server.send(value);
+    try {
+
+      server.close(
+
+        code,
+
+        reason
+
+      );
+
+    } catch {}
+
+  }
+
+  /* =======================================================
+
+   * WebSocket → Telegram TCP
+
+   * ===================================================== */
+
+  server.addEventListener(
+
+    "message",
+
+    async event => {
+
+      if (stopped) {
+
+        return;
+
+      }
+
+      try {
+
+        let data;
+
+        /* -----------------------------------------------
+
+         * Text
+
+         * --------------------------------------------- */
+
+        if (
+
+          typeof event.data ===
+
+          "string"
+
+        ) {
+
+          data =
+
+            new TextEncoder()
+
+              .encode(
+
+                event.data
+
+              );
+
         }
+
+        /* -----------------------------------------------
+
+         * Blob
+
+         * --------------------------------------------- */
+
+        else if (
+
+          typeof Blob !==
+
+          "undefined" &&
+
+          event.data instanceof Blob
+
+        ) {
+
+          data =
+
+            new Uint8Array(
+
+              await event.data
+
+                .arrayBuffer()
+
+            );
+
+        }
+
+        /* -----------------------------------------------
+
+         * ArrayBuffer
+
+         * --------------------------------------------- */
+
+        else {
+
+          data =
+
+            new Uint8Array(
+
+              event.data
+
+            );
+
+        }
+
+        if (
+
+          !data ||
+
+          data.byteLength === 0
+
+        ) {
+
+          return;
+
+        }
+
+        /* -----------------------------------------------
+
+         * Write TCP
+
+         * --------------------------------------------- */
+
+        const writer =
+
+          socket.writable
+
+            .getWriter();
+
+        try {
+
+          await writer.write(
+
+            data
+
+          );
+
+        } finally {
+
+          writer.releaseLock();
+
+        }
+
+      } catch (error) {
+
+        console.error(
+
+          "WS → TCP error:",
+
+          error
+
+        );
+
+        await closeEverything(
+
+          1011,
+
+          "TCP write failed"
+
+        );
+
+      }
+
+    }
+
+  );
+
+  /* =======================================================
+
+   * Telegram TCP → WebSocket
+
+   * ===================================================== */
+
+  (async () => {
+
+    try {
+
+      const reader =
+
+        socket.readable
+
+          .getReader();
+
+      while (!stopped) {
+
+        const result =
+
+          await reader.read();
+
+        if (result.done) {
+
+          break;
+
+        }
+
+        const data =
+
+          result.value;
+
+        if (
+
+          data &&
+
+          data.byteLength > 0
+
+        ) {
+
+          server.send(
+
+            data
+
+          );
+
+        }
+
       }
 
       reader.releaseLock();
 
-      if (!closed) {
-        safeClose(server, 1000, "TCP closed");
-      }
-    } catch (error) {
-      console.error("TCP → WS error:", error);
+      if (!stopped) {
 
-      safeClose(server, 1011, "TCP read failed");
+        await closeEverything(
+
+          1000,
+
+          "Telegram TCP closed"
+
+        );
+
+      }
+
+    } catch (error) {
+
+      console.error(
+
+        "TCP → WS error:",
+
+        error
+
+      );
+
+      await closeEverything(
+
+        1011,
+
+        "TCP read failed"
+
+      );
+
     }
+
   })();
 
-  return new Response(null, {
-    status: 101,
-    webSocket: client,
+  /* =======================================================
 
-    headers: selectedProtocol
-      ? {
-          "Sec-WebSocket-Protocol": selectedProtocol,
-        }
-      : {},
-  });
+   * WebSocket close
+
+   * ===================================================== */
+
+  server.addEventListener(
+
+    "close",
+
+    event => {
+
+      console.log(
+
+        "WebSocket closed:",
+
+        event.code,
+
+        event.reason
+
+      );
+
+      stopped =
+
+        true;
+
+      try {
+
+        socket.close();
+
+      } catch {}
+
+    }
+
+  );
+
+  /* =======================================================
+
+   * WebSocket error
+
+   * ===================================================== */
+
+  server.addEventListener(
+
+    "error",
+
+    error => {
+
+      console.error(
+
+        "WebSocket error:",
+
+        error
+
+      );
+
+      stopped =
+
+        true;
+
+      try {
+
+        socket.close();
+
+      } catch {}
+
+    }
+
+  );
+
+  /* -------------------------------------------------------
+
+   * Standard Cloudflare WebSocket response
+
+   * ----------------------------------------------------- */
+
+  return new Response(
+
+    null,
+
+    {
+
+      status: 101,
+
+      webSocket: client
+
+    }
+
+  );
+
 }
-
 
 /* =========================================================
- * TCP connection
- * =======================================================*/
 
-function connectTelegram(hostname) {
-  return connect({
-    hostname,
-    port: 443,
-    secureTransport: "off",
-    allowHalfOpen: true,
-  });
+ * JSON helper
+
+ * ======================================================= */
+
+function json(
+
+  data,
+
+  status = 200
+
+) {
+
+  return new Response(
+
+    JSON.stringify(
+
+      data,
+
+      null,
+
+      2
+
+    ),
+
+    {
+
+      status,
+
+      headers: {
+
+        "content-type":
+
+          "application/json; charset=UTF-8",
+
+        "cache-control":
+
+          "no-store"
+
+      }
+
+    }
+
+  );
+
 }
-
 
 /* =========================================================
- * Helpers
- * =======================================================*/
 
-function safeClose(ws, code = 1000, reason = "") {
-  try {
-    ws.close(code, reason);
-  } catch {}
-}
+ * Homepage
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data, null, 2), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=UTF-8",
-      "cache-control": "no-store",
-    },
-  });
-}
-
-
-/* =========================================================
- * Root diagnostic page
- * =======================================================*/
+ * ======================================================= */
 
 const ROOT_HTML = `
-<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport"
-      content="width=device-width,
-               initial-scale=1,
-               viewport-fit=cover">
 
-<title>Telegram Cloudflare Node</title>
+<!DOCTYPE html>
+
+<html lang="zh-CN">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+
+  name="viewport"
+
+  content="width=device-width,
+
+           initial-scale=1,
+
+           viewport-fit=cover"
+
+>
+
+<title>
+
+Telegram Cloudflare
+
+</title>
 
 <style>
+
 * {
+
   box-sizing: border-box;
+
 }
 
 body {
+
   margin: 0;
-  background: #f5f6f8;
-  color: #111;
+
+  min-height: 100vh;
+
+  background:
+
+    #f5f6f8;
+
+  color:
+
+    #111;
+
   font-family:
+
     -apple-system,
+
     BlinkMacSystemFont,
+
     "SF Pro Display",
+
     "Helvetica Neue",
+
     Arial,
+
     sans-serif;
+
 }
 
 main {
-  max-width: 680px;
-  margin: auto;
+
+  width:
+
+    min(680px, 100%);
+
+  margin:
+
+    auto;
+
   padding:
-    calc(env(safe-area-inset-top) + 32px)
+
+    calc(
+
+      env(safe-area-inset-top)
+
+      + 32px
+
+    )
+
     20px
-    calc(env(safe-area-inset-bottom) + 40px);
+
+    calc(
+
+      env(safe-area-inset-bottom)
+
+      + 40px
+
+    );
+
 }
 
 .card {
-  background: white;
-  border-radius: 24px;
-  padding: 24px;
+
+  background:
+
+    #fff;
+
+  border-radius:
+
+    24px;
+
+  padding:
+
+    24px;
+
   box-shadow:
-    0 10px 35px rgba(0,0,0,.06);
+
+    0 12px 40px
+
+    rgba(0,0,0,.06);
+
 }
 
 h1 {
-  margin: 0 0 8px;
-  font-size: 28px;
+
+  margin:
+
+    0;
+
+  font-size:
+
+    28px;
+
+  letter-spacing:
+
+    -.5px;
+
 }
 
-p {
-  color: #666;
-  line-height: 1.6;
+.subtitle {
+
+  margin-top:
+
+    8px;
+
+  color:
+
+    #777;
+
+  font-size:
+
+    14px;
+
 }
 
-a {
-  display: block;
-  margin-top: 12px;
-  padding: 16px;
-  background: #f1f2f4;
-  color: #111;
-  text-decoration: none;
-  border-radius: 14px;
+.link {
+
+  display:
+
+    block;
+
+  margin-top:
+
+    14px;
+
+  padding:
+
+    16px;
+
+  border-radius:
+
+    15px;
+
+  background:
+
+    #f1f2f4;
+
+  color:
+
+    #111;
+
+  text-decoration:
+
+    none;
+
+  font-size:
+
+    15px;
+
+  font-weight:
+
+    600;
+
 }
 
-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
 </style>
+
 </head>
 
 <body>
@@ -369,18 +1124,40 @@ code {
 
 <div class="card">
 
-<h1>Telegram Cloudflare Node</h1>
+<h1>
 
-<p>
-V0.3 · MTProto WebSocket
-</p>
+Telegram Cloudflare
 
-<a href="/health">
-查看 /health
+</h1>
+
+<div class="subtitle">
+
+V0.3.1 · WebSocket → TCP
+
+</div>
+
+<a
+
+  class="link"
+
+  href="/health"
+
+>
+
+健康检查
+
 </a>
 
-<a href="/mtproto">
-打开 MTProto 测试
+<a
+
+  class="link"
+
+  href="/mtproto"
+
+>
+
+MTProto 测试
+
 </a>
 
 </div>
@@ -388,230 +1165,473 @@ V0.3 · MTProto WebSocket
 </main>
 
 </body>
+
 </html>
+
 `;
 
-
 /* =========================================================
- * MTProto test page
- *
- * 注意：
- * 这个页面目前用于验证 Worker WSS transport。
- * 真正的 MTProto Client 不直接放在 Worker 中。
- * =======================================================*/
+
+ * MTProto diagnostic page
+
+ * ======================================================= */
 
 const MTPROTO_HTML = `
-<!doctype html>
+
+<!DOCTYPE html>
+
 <html lang="zh-CN">
 
 <head>
 
-<meta charset="utf-8">
+<meta charset="UTF-8">
 
-<meta name="viewport"
-      content="width=device-width,
-               initial-scale=1,
-               viewport-fit=cover">
+<meta
 
-<title>MTProto · Cloudflare Test</title>
+  name="viewport"
+
+  content="width=device-width,
+
+           initial-scale=1,
+
+           viewport-fit=cover"
+
+>
+
+<title>
+
+MTProto Test
+
+</title>
 
 <style>
 
 * {
-  box-sizing: border-box;
+
+  box-sizing:
+
+    border-box;
+
 }
 
 body {
-  margin: 0;
 
-  min-height: 100vh;
+  margin:
+
+    0;
+
+  min-height:
+
+    100vh;
 
   background:
+
     linear-gradient(
+
       180deg,
-      #f7f8fa 0%,
-      #eef0f3 100%
+
+      #f7f8fa,
+
+      #eef0f3
+
     );
 
-  color: #111;
+  color:
+
+    #111;
 
   font-family:
+
     -apple-system,
+
     BlinkMacSystemFont,
+
     "SF Pro Display",
+
     "Helvetica Neue",
+
     Arial,
+
     sans-serif;
+
 }
 
 main {
-  width: min(680px, 100%);
-  margin: auto;
+
+  width:
+
+    min(680px, 100%);
+
+  margin:
+
+    auto;
 
   padding:
-    calc(env(safe-area-inset-top) + 28px)
+
+    calc(
+
+      env(safe-area-inset-top)
+
+      + 28px
+
+    )
+
     18px
-    calc(env(safe-area-inset-bottom) + 40px);
+
+    calc(
+
+      env(safe-area-inset-bottom)
+
+      + 40px
+
+    );
+
 }
 
 .header {
-  margin-bottom: 22px;
+
+  margin-bottom:
+
+    20px;
+
 }
 
 .title {
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -.6px;
+
+  font-size:
+
+    30px;
+
+  font-weight:
+
+    700;
+
+  letter-spacing:
+
+    -.7px;
+
 }
 
 .subtitle {
-  margin-top: 7px;
 
-  color: #777;
+  margin-top:
 
-  font-size: 14px;
+    7px;
+
+  color:
+
+    #777;
+
+  font-size:
+
+    14px;
+
 }
 
 .card {
-  background: rgba(255,255,255,.92);
 
-  border-radius: 24px;
+  background:
 
-  padding: 20px;
+    rgba(
+
+      255,
+
+      255,
+
+      255,
+
+      .94
+
+    );
+
+  border-radius:
+
+    24px;
+
+  padding:
+
+    18px 20px;
 
   box-shadow:
-    0 12px 40px rgba(0,0,0,.07);
+
+    0 12px 40px
+
+    rgba(0,0,0,.07);
+
 }
 
 .row {
-  display: flex;
 
-  align-items: center;
+  display:
 
-  gap: 14px;
+    flex;
 
-  padding: 15px 4px;
+  align-items:
+
+    center;
+
+  gap:
+
+    13px;
+
+  padding:
+
+    15px 2px;
 
   border-bottom:
+
     1px solid #eee;
+
 }
 
 .row:last-child {
-  border-bottom: 0;
+
+  border-bottom:
+
+    0;
+
 }
 
 .icon {
-  width: 38px;
-  height: 38px;
 
-  border-radius: 12px;
+  width:
 
-  display: flex;
-  align-items: center;
-  justify-content: center;
+    40px;
 
-  background: #f1f2f4;
+  height:
 
-  font-size: 18px;
+    40px;
+
+  flex:
+
+    0 0 40px;
+
+  border-radius:
+
+    12px;
+
+  display:
+
+    flex;
+
+  align-items:
+
+    center;
+
+  justify-content:
+
+    center;
+
+  background:
+
+    #f1f2f4;
+
+  font-size:
+
+    18px;
+
 }
 
 .info {
-  flex: 1;
+
+  flex:
+
+    1;
+
+  min-width:
+
+    0;
+
 }
 
 .name {
-  font-size: 15px;
-  font-weight: 600;
+
+  font-size:
+
+    15px;
+
+  font-weight:
+
+    600;
+
 }
 
 .detail {
-  margin-top: 4px;
 
-  font-size: 12px;
+  margin-top:
 
-  color: #999;
+    4px;
+
+  color:
+
+    #999;
+
+  font-size:
+
+    12px;
+
 }
 
 .status {
-  font-size: 13px;
 
-  font-weight: 600;
+  font-size:
 
-  color: #999;
+    13px;
+
+  font-weight:
+
+    600;
+
+  color:
+
+    #999;
+
 }
 
 .ok {
-  color: #18a058;
+
+  color:
+
+    #18a058;
+
 }
 
 .fail {
-  color: #e5484d;
+
+  color:
+
+    #e5484d;
+
 }
 
 .wait {
-  color: #d28a00;
+
+  color:
+
+    #c18400;
+
 }
 
 button {
-  width: 100%;
 
-  margin-top: 18px;
+  width:
 
-  border: 0;
+    100%;
 
-  border-radius: 15px;
+  margin-top:
 
-  padding: 15px;
+    18px;
 
-  background: #111;
+  border:
 
-  color: white;
+    0;
 
-  font-size: 16px;
+  border-radius:
 
-  font-weight: 600;
+    15px;
+
+  padding:
+
+    16px;
+
+  background:
+
+    #111;
+
+  color:
+
+    #fff;
+
+  font-size:
+
+    16px;
+
+  font-weight:
+
+    600;
+
 }
 
 button:disabled {
-  opacity: .5;
+
+  opacity:
+
+    .5;
+
 }
 
 .log {
-  margin-top: 18px;
 
-  padding: 14px;
+  margin-top:
 
-  border-radius: 15px;
+    18px;
 
-  background: #111;
+  min-height:
 
-  color: #ddd;
+    100px;
+
+  padding:
+
+    15px;
+
+  border-radius:
+
+    16px;
+
+  background:
+
+    #111;
+
+  color:
+
+    #d8d8d8;
 
   font-family:
+
     ui-monospace,
+
     SFMono-Regular,
+
     Menlo,
+
     monospace;
 
-  font-size: 11px;
+  font-size:
 
-  line-height: 1.65;
+    11px;
 
-  white-space: pre-wrap;
+  line-height:
 
-  word-break: break-word;
+    1.65;
 
-  min-height: 80px;
+  white-space:
+
+    pre-wrap;
+
+  word-break:
+
+    break-word;
+
 }
 
 .note {
-  margin-top: 18px;
 
-  color: #888;
+  margin-top:
 
-  font-size: 12px;
+    16px;
 
-  line-height: 1.6;
+  color:
+
+    #888;
+
+  font-size:
+
+    12px;
+
+  line-height:
+
+    1.6;
+
 }
 
 </style>
@@ -625,374 +1645,741 @@ button:disabled {
 <div class="header">
 
 <div class="title">
+
 MTProto
+
 </div>
 
 <div class="subtitle">
-Cloudflare WebSocket Transport Test · V0.3
-</div>
+
+Cloudflare WebSocket Relay · V0.3.1
 
 </div>
 
+</div>
 
 <div class="card">
 
 <div class="row">
 
-<div class="icon">🌐</div>
+<div class="icon">
+
+🌐
+
+</div>
 
 <div class="info">
 
 <div class="name">
+
 Cloudflare WSS
+
 </div>
 
 <div class="detail">
+
 WebSocket handshake
-</div>
 
 </div>
 
-<div id="wss"
-     class="status wait">
+</div>
+
+<div
+
+  id="wss"
+
+  class="status wait"
+
+>
+
 等待
-</div>
 
 </div>
 
+</div>
 
 <div class="row">
 
-<div class="icon">◈</div>
+<div class="icon">
+
+↕
+
+</div>
 
 <div class="info">
 
 <div class="name">
-WebSocket Protocol
-</div>
 
-<div class="detail">
-Sec-WebSocket-Protocol
-</div>
-
-</div>
-
-<div id="protocol"
-     class="status wait">
-等待
-</div>
-
-</div>
-
-
-<div class="row">
-
-<div class="icon">↕</div>
-
-<div class="info">
-
-<div class="name">
 Binary Stream
+
 </div>
 
 <div class="detail">
+
 WebSocket ↔ TCP
-</div>
 
 </div>
 
-<div id="stream"
-     class="status wait">
+</div>
+
+<div
+
+  id="stream"
+
+  class="status wait"
+
+>
+
 等待
-</div>
 
 </div>
 
+</div>
 
 <div class="row">
 
-<div class="icon">🔐</div>
+<div class="icon">
+
+📡
+
+</div>
 
 <div class="info">
 
 <div class="name">
-MTProto Transport
-</div>
 
-<div class="detail">
-Obfuscated transport
-</div>
-
-</div>
-
-<div id="mtproto"
-     class="status wait">
-未测试
-</div>
-
-</div>
-
-
-<div class="row">
-
-<div class="icon">📡</div>
-
-<div class="info">
-
-<div class="name">
 Telegram DC2
+
 </div>
 
 <div class="detail">
+
 149.154.167.50:443
-</div>
 
 </div>
 
-<div id="telegram"
-     class="status wait">
+</div>
+
+<div
+
+  id="telegram"
+
+  class="status wait"
+
+>
+
 等待
-</div>
 
 </div>
 
 </div>
 
+<div class="row">
+
+<div class="icon">
+
+🔐
+
+</div>
+
+<div class="info">
+
+<div class="name">
+
+MTProto
+
+</div>
+
+<div class="detail">
+
+Transport layer
+
+</div>
+
+</div>
+
+<div
+
+  id="mtproto"
+
+  class="status wait"
+
+>
+
+未测试
+
+</div>
+
+</div>
+
+</div>
 
 <button id="start">
+
 开始测试
+
 </button>
 
+<div
 
-<div id="log"
-     class="log">
-等待开始……
-</div>
+  id="log"
 
+  class="log"
+
+>等待开始……</div>
 
 <div class="note">
 
-当前 V0.3 页面先验证 Cloudflare WSS →
-Telegram TCP 的透明字节流。
-真正 MTProto 2.0 / DH / auth key
-需要 MTProto Client 参与。
+这一版只验证：
+
+WSS → Cloudflare Worker
+
+→ Telegram TCP
+
+0xEF 是 Abridged Transport
+
+协议标识，并不代表已经完成
+
+MTProto 2.0 authentication。
 
 </div>
 
 </main>
 
-
 <script>
 
-const $ = id =>
-  document.getElementById(id);
+const $ =
 
-const logEl = $("log");
+  id =>
+
+    document.getElementById(id);
+
+const logEl =
+
+  $("log");
 
 function log(message) {
 
   const time =
-    new Date().toLocaleTimeString();
+
+    new Date()
+
+      .toLocaleTimeString();
 
   logEl.textContent +=
-    "\\n[" + time + "] " + message;
+
+    "\\n[" +
+
+    time +
+
+    "] " +
+
+    message;
+
 }
 
-function status(id, text, type) {
+function setStatus(
 
-  const el = $(id);
+  id,
 
-  el.textContent = text;
+  text,
+
+  type
+
+) {
+
+  const el =
+
+    $(id);
+
+  el.textContent =
+
+    text;
 
   el.className =
-    "status " + type;
+
+    "status " +
+
+    type;
+
 }
 
-async function run() {
+async function runTest() {
 
-  $("start").disabled = true;
+  $("start").disabled =
 
-  logEl.textContent = "";
+    true;
 
-  status("wss", "连接中", "wait");
+  logEl.textContent =
 
-  status("protocol", "等待", "wait");
+    "";
 
-  status("stream", "等待", "wait");
+  setStatus(
 
-  status("telegram", "连接中", "wait");
+    "wss",
+
+    "连接中",
+
+    "wait"
+
+  );
+
+  setStatus(
+
+    "stream",
+
+    "等待",
+
+    "wait"
+
+  );
+
+  setStatus(
+
+    "telegram",
+
+    "连接中",
+
+    "wait"
+
+  );
+
+  setStatus(
+
+    "mtproto",
+
+    "测试中",
+
+    "wait"
+
+  );
 
   try {
 
+    /* ---------------------------------------------------
+
+     * Build WebSocket URL
+
+     * ------------------------------------------------- */
+
+    const wsProtocol =
+
+      location.protocol === "https:"
+
+        ? "wss:"
+
+        : "ws:";
+
     const url =
-      location.origin.replace(
-        /^http/,
-        "ws"
-      ) +
+
+      wsProtocol +
+
+      "//" +
+
+      location.host +
+
       "/apiws?dc=2";
 
-    log("连接：");
+    log(
 
-    log(url);
+      "连接："
 
-    const ws =
-      new WebSocket(
-        url,
-        "binary"
-      );
-
-    ws.binaryType =
-      "arraybuffer";
-
-    ws.onopen = () => {
-
-      status(
-        "wss",
-        "成功",
-        "ok"
-      );
-
-      status(
-        "protocol",
-        ws.protocol || "binary",
-        "ok"
-      );
-
-      status(
-        "stream",
-        "正常",
-        "ok"
-      );
-
-      status(
-        "telegram",
-        "TCP 已连接",
-        "ok"
-      );
-
-      log(
-        "WebSocket 已连接"
-      );
-
-      log(
-        "协议：" +
-        (ws.protocol || "binary")
-      );
-
-      /*
-       * 这里只发送测试字节。
-       *
-       * 0xEF 是 Abridged transport
-       * 的协议标识。
-       *
-       * 它不是完整 MTProto
-       * authentication。
-       */
-
-      ws.send(
-        new Uint8Array([0xef])
-      );
-
-      log(
-        "→ 已发送 Abridged 0xEF"
-      );
-
-      status(
-        "mtproto",
-        "Transport 测试",
-        "wait"
-      );
-    };
-
-
-    ws.onmessage = event => {
-
-      const data =
-        new Uint8Array(
-          event.data
-        );
-
-      log(
-        "← Telegram 返回 " +
-        data.length +
-        " bytes"
-      );
-
-      if (data.length) {
-
-        const hex =
-          [...data]
-            .slice(0, 32)
-            .map(
-              x =>
-                x
-                  .toString(16)
-                  .padStart(2, "0")
-            )
-            .join(" ");
-
-        log(
-          "HEX: " + hex
-        );
-      }
-    };
-
-
-    ws.onerror = () => {
-
-      status(
-        "wss",
-        "失败",
-        "fail"
-      );
-
-      status(
-        "telegram",
-        "失败",
-        "fail"
-      );
-
-      log(
-        "WebSocket error"
-      );
-    };
-
-
-    ws.onclose = event => {
-
-      log(
-        "WebSocket closed: " +
-        event.code
-      );
-
-      $("start").disabled =
-        false;
-    };
-
-
-  } catch (error) {
-
-    status(
-      "wss",
-      "失败",
-      "fail"
     );
 
     log(
+
+      url
+
+    );
+
+    /* ---------------------------------------------------
+
+     * IMPORTANT
+
+     *
+
+     * V0.3.1 暂时不指定
+
+     * Sec-WebSocket-Protocol: binary
+
+     *
+
+     * 先确认基础 WSS relay。
+
+     * ------------------------------------------------- */
+
+    const ws =
+
+      new WebSocket(
+
+        url
+
+      );
+
+    ws.binaryType =
+
+      "arraybuffer";
+
+    /* ---------------------------------------------------
+
+     * Open
+
+     * ------------------------------------------------- */
+
+    ws.onopen = () => {
+
+      setStatus(
+
+        "wss",
+
+        "成功",
+
+        "ok"
+
+      );
+
+      setStatus(
+
+        "stream",
+
+        "正常",
+
+        "ok"
+
+      );
+
+      setStatus(
+
+        "telegram",
+
+        "TCP 已连接",
+
+        "ok"
+
+      );
+
+      log(
+
+        "WebSocket 已连接"
+
+      );
+
+      log(
+
+        "protocol = " +
+
+        (
+
+          ws.protocol ||
+
+          "none"
+
+        )
+
+      );
+
+      /* -----------------------------------------------
+
+       * Abridged transport marker
+
+       * --------------------------------------------- */
+
+      const test =
+
+        new Uint8Array([
+
+          0xef
+
+        ]);
+
+      ws.send(
+
+        test
+
+      );
+
+      log(
+
+        "→ 已发送 0xEF"
+
+      );
+
+      setStatus(
+
+        "mtproto",
+
+        "Transport 字节已发送",
+
+        "wait"
+
+      );
+
+    };
+
+    /* ---------------------------------------------------
+
+     * Message
+
+     * ------------------------------------------------- */
+
+    ws.onmessage =
+
+      event => {
+
+        let data;
+
+        if (
+
+          event.data instanceof
+
+          ArrayBuffer
+
+        ) {
+
+          data =
+
+            new Uint8Array(
+
+              event.data
+
+            );
+
+        } else if (
+
+          event.data instanceof
+
+          Blob
+
+        ) {
+
+          event.data
+
+            .arrayBuffer()
+
+            .then(
+
+              buffer => {
+
+                handleData(
+
+                  new Uint8Array(
+
+                    buffer
+
+                  )
+
+                );
+
+              }
+
+            );
+
+          return;
+
+        } else {
+
+          log(
+
+            "← 收到非二进制数据"
+
+          );
+
+          return;
+
+        }
+
+        handleData(
+
+          data
+
+        );
+
+      };
+
+    function handleData(
+
+      data
+
+    ) {
+
+      log(
+
+        "← Telegram 返回 " +
+
+        data.byteLength +
+
+        " bytes"
+
+      );
+
+      if (
+
+        data.byteLength > 0
+
+      ) {
+
+        const hex =
+
+          Array.from(
+
+            data.slice(
+
+              0,
+
+              32
+
+            )
+
+          )
+
+          .map(
+
+            x =>
+
+              x
+
+                .toString(16)
+
+                .padStart(
+
+                  2,
+
+                  "0"
+
+                )
+
+          )
+
+          .join(" ");
+
+        log(
+
+          "HEX: " +
+
+          hex
+
+        );
+
+      }
+
+    }
+
+    /* ---------------------------------------------------
+
+     * Error
+
+     * ------------------------------------------------- */
+
+    ws.onerror =
+
+      event => {
+
+        setStatus(
+
+          "wss",
+
+          "失败",
+
+          "fail"
+
+        );
+
+        setStatus(
+
+          "telegram",
+
+          "失败",
+
+          "fail"
+
+        );
+
+        log(
+
+          "WebSocket error"
+
+        );
+
+        log(
+
+          "readyState = " +
+
+          ws.readyState
+
+        );
+
+      };
+
+    /* ---------------------------------------------------
+
+     * Close
+
+     * ------------------------------------------------- */
+
+    ws.onclose =
+
+      event => {
+
+        log(
+
+          "WebSocket closed: " +
+
+          event.code +
+
+          " / " +
+
+          (
+
+            event.reason ||
+
+            "no reason"
+
+          )
+
+        );
+
+        $("start").disabled =
+
+          false;
+
+      };
+
+  } catch (error) {
+
+    setStatus(
+
+      "wss",
+
+      "失败",
+
+      "fail"
+
+    );
+
+    log(
+
       "ERROR: " +
+
       error.message
+
     );
 
     $("start").disabled =
+
       false;
+
   }
 
 }
 
 $("start")
+
   .addEventListener(
+
     "click",
-    run
+
+    runTest
+
   );
 
 </script>
@@ -1000,4 +2387,5 @@ $("start")
 </body>
 
 </html>
+
 `;
