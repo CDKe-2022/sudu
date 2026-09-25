@@ -1,35 +1,8 @@
 import { connect } from "cloudflare:sockets";
 
-/*
- * CF Telegram Worker
- * Version: 0.1.0
- *
- * Architecture:
- *
- * Client
- *   ↓ WebSocket
- * Cloudflare Worker
- *   ↓ TCP
- * Telegram DC2
- *
- * V0.1:
- * - Only Telegram DC2
- * - Only port 443
- * - Only WebSocket
- * - No arbitrary TCP proxy
- * - No NAT Linux
- * - No VPS
- */
-
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 const WS_PATH = "/apiws";
 
-/*
- * Telegram DC2 endpoints.
- *
- * V0.1 暂时只使用第一个地址。
- * 后续会加入自动 fallback。
- */
 const TELEGRAM_DC2 = [
   "149.154.167.50",
   "149.154.167.41",
@@ -48,86 +21,185 @@ function json(data, status = 200) {
 
 function isWebSocket(request) {
   return (
-    request.headers.get("Upgrade")?.toLowerCase() === "websocket"
+    request.headers.get("Upgrade")?.toLowerCase() ===
+    "websocket"
+  );
+}
+
+function testPage(url) {
+  const wsUrl =
+    `${url.protocol === "https:" ? "wss:" : "ws:"}` +
+    `//${url.host}${WS_PATH}?dc=2`;
+
+  return new Response(
+`<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CF Telegram Worker Test</title>
+<style>
+body {
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  padding: 24px;
+  line-height: 1.6;
+}
+button {
+  font-size: 17px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  border: 0;
+}
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f5f5f5;
+  padding: 16px;
+  border-radius: 12px;
+}
+</style>
+</head>
+
+<body>
+
+<h2>Cloudflare Telegram Worker</h2>
+
+<p>V0.1 WebSocket 测试</p>
+
+<button id="test">测试 WSS</button>
+
+<pre id="log">等待测试...</pre>
+
+<script>
+
+const log = document.getElementById("log");
+
+function write(text) {
+  log.textContent += "\\n" + text;
+}
+
+document.getElementById("test").onclick = () => {
+
+  log.textContent = "正在建立 WebSocket...";
+
+  const ws = new WebSocket(
+    ${JSON.stringify(wsUrl)}
+  );
+
+  ws.binaryType = "arraybuffer";
+
+  ws.onopen = () => {
+    write("✅ WebSocket 已连接");
+
+    /*
+     * 发送一个测试字节。
+     *
+     * 这不是完整 MTProto 数据。
+     * 这里只测试 Worker ↔ Telegram TCP relay。
+     */
+    ws.send(
+      new Uint8Array([0xef])
+    );
+
+    write("→ 已发送测试数据");
+  };
+
+  ws.onmessage = (event) => {
+
+    let length = 0;
+
+    if (event.data instanceof ArrayBuffer) {
+      length = event.data.byteLength;
+    } else if (event.data instanceof Blob) {
+      length = event.data.size;
+    }
+
+    write(
+      "← Telegram 返回数据：" +
+      length +
+      " bytes"
+    );
+  };
+
+  ws.onerror = () => {
+    write("❌ WebSocket 错误");
+  };
+
+  ws.onclose = (event) => {
+    write(
+      "WebSocket 已关闭：" +
+      event.code +
+      " " +
+      event.reason
+    );
+  };
+};
+
+</script>
+
+</body>
+</html>`,
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    },
   );
 }
 
 export default {
   async fetch(request) {
+
     const url = new URL(request.url);
 
     /*
      * ==========================
-     * 1. Health Check
+     * 测试页面
      * ==========================
      */
 
     if (url.pathname === "/") {
-      return json({
-        name: "CF Telegram Worker",
-        version: VERSION,
-        status: "ok",
-        cloudflare: true,
-        target: "Telegram DC2",
-        websocket: "/apiws?dc=2",
-      });
+      return testPage(url);
     }
 
     /*
      * ==========================
-     * 2. WebSocket Endpoint
+     * WebSocket
      * ==========================
      */
 
     if (url.pathname !== WS_PATH) {
       return new Response("Not Found", {
         status: 404,
-        headers: {
-          "content-type": "text/plain; charset=utf-8",
-        },
       });
     }
 
-    /*
-     * 必须是 WebSocket
-     */
     if (!isWebSocket(request)) {
-      return new Response("Expected WebSocket", {
-        status: 426,
-        headers: {
-          Upgrade: "websocket",
+      return new Response(
+        "Expected WebSocket",
+        {
+          status: 426,
+          headers: {
+            Upgrade: "websocket",
+          },
         },
-      });
+      );
     }
 
-    /*
-     * ==========================
-     * 3. DC Selection
-     * ==========================
-     */
-
-    const dc = url.searchParams.get("dc") || "2";
+    const dc =
+      url.searchParams.get("dc") || "2";
 
     if (dc !== "2") {
       return json(
         {
           error: "unsupported_dc",
-          message: "V0.1 only supports Telegram DC2.",
         },
         400,
       );
     }
 
-    /*
-     * V0.1 固定 DC2 第一个地址
-     */
     const target = TELEGRAM_DC2[0];
-
-    /*
-     * ==========================
-     * 4. Create WebSocket Pair
-     * ==========================
-     */
 
     const pair = new WebSocketPair();
 
@@ -136,15 +208,14 @@ export default {
 
     server.accept();
 
-    let socket = null;
-    let tcpReader = null;
-    let tcpWriter = null;
+    let socket;
+    let reader;
+    let writer;
 
     try {
+
       /*
-       * ==========================
-       * 5. Worker → Telegram TCP
-       * ==========================
+       * Worker → Telegram DC
        */
 
       socket = connect({
@@ -156,91 +227,111 @@ export default {
 
       await socket.opened;
 
-      tcpReader = socket.readable.getReader();
-      tcpWriter = socket.writable.getWriter();
+      reader =
+        socket.readable.getReader();
+
+      writer =
+        socket.writable.getWriter();
 
       /*
-       * ==========================
-       * 6. WebSocket → TCP
-       * ==========================
+       * WebSocket → TCP
        */
 
-      server.addEventListener("message", async (event) => {
-        try {
-          let data;
-
-          /*
-           * Telegram transport 使用 binary。
-           */
-
-          if (event.data instanceof ArrayBuffer) {
-            data = new Uint8Array(event.data);
-          } else if (event.data instanceof Blob) {
-            data = new Uint8Array(
-              await event.data.arrayBuffer(),
-            );
-          } else {
-            server.close(
-              1003,
-              "Binary WebSocket data required",
-            );
-            return;
-          }
-
-          if (data.byteLength > 0) {
-            await tcpWriter.write(data);
-          }
-        } catch (error) {
-          console.error(
-            "WebSocket -> TCP error:",
-            error,
-          );
+      server.addEventListener(
+        "message",
+        async (event) => {
 
           try {
-            server.close(
-              1011,
-              "TCP write failed",
+
+            let data;
+
+            if (
+              event.data instanceof ArrayBuffer
+            ) {
+              data =
+                new Uint8Array(
+                  event.data
+                );
+
+            } else if (
+              event.data instanceof Blob
+            ) {
+              data =
+                new Uint8Array(
+                  await event.data.arrayBuffer()
+                );
+
+            } else {
+
+              server.close(
+                1003,
+                "Binary data required"
+              );
+
+              return;
+            }
+
+            if (data.byteLength > 0) {
+              await writer.write(data);
+            }
+
+          } catch (error) {
+
+            console.error(
+              "WS -> TCP:",
+              error
             );
-          } catch {}
-        }
-      });
+
+            try {
+              server.close(
+                1011,
+                "TCP write failed"
+              );
+            } catch {}
+          }
+        },
+      );
 
       /*
-       * ==========================
-       * 7. TCP → WebSocket
-       * ==========================
+       * TCP → WebSocket
        */
 
       (async () => {
+
         try {
+
           while (true) {
-            const { value, done } =
-              await tcpReader.read();
+
+            const {
+              value,
+              done
+            } = await reader.read();
 
             if (done) {
               break;
             }
 
-            if (!value) {
-              continue;
-            }
-
             if (
-              server.readyState === WebSocket.OPEN
+              value &&
+              server.readyState ===
+                WebSocket.OPEN
             ) {
+
               server.send(value);
-            } else {
-              break;
             }
           }
+
         } catch (error) {
+
           console.error(
-            "TCP -> WebSocket error:",
-            error,
+            "TCP -> WS:",
+            error
           );
+
         } finally {
+
           try {
-            tcpReader.releaseLock();
+            reader.releaseLock();
           } catch {}
 
           try {
@@ -254,56 +345,52 @@ export default {
             ) {
               server.close(
                 1000,
-                "TCP connection closed",
+                "TCP closed"
               );
             }
           } catch {}
         }
+
       })();
 
       /*
-       * ==========================
-       * 8. Client Close
-       * ==========================
+       * WebSocket 关闭
        */
 
       server.addEventListener(
         "close",
         async () => {
+
           try {
-            tcpReader?.cancel();
+            await reader.cancel();
           } catch {}
 
           try {
-            tcpWriter?.close();
+            await writer.close();
           } catch {}
 
           try {
-            await socket?.close();
+            await socket.close();
           } catch {}
         },
       );
-
-      /*
-       * ==========================
-       * 9. Return WebSocket
-       * ==========================
-       */
 
       return new Response(null, {
         status: 101,
         webSocket: client,
       });
+
     } catch (error) {
+
       console.error(
-        "Telegram TCP connection failed:",
-        error,
+        "TCP connection failed:",
+        error
       );
 
       try {
         server.close(
           1011,
-          "Telegram connection failed",
+          "Telegram connection failed"
         );
       } catch {}
 
