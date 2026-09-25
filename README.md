@@ -4,7 +4,7 @@
 
  *
 
- * V0.3.1
+ * V0.3.2
 
  *
 
@@ -102,12 +102,6 @@ const TELEGRAM_DCS = {
 
 };
 
-/* =========================================================
-
- * Default DC
-
- * ======================================================= */
-
 const DEFAULT_DC = 2;
 
 /* =========================================================
@@ -126,7 +120,7 @@ export default {
 
     /* -----------------------------------------------------
 
-     * Homepage
+     * /
 
      * --------------------------------------------------- */
 
@@ -160,7 +154,7 @@ export default {
 
     /* -----------------------------------------------------
 
-     * Health
+     * /health
 
      * --------------------------------------------------- */
 
@@ -176,7 +170,7 @@ export default {
 
         version:
 
-          "V0.3.1",
+          "V0.3.2",
 
         websocket:
 
@@ -200,7 +194,7 @@ export default {
 
     /* -----------------------------------------------------
 
-     * MTProto test page
+     * /mtproto
 
      * --------------------------------------------------- */
 
@@ -234,7 +228,7 @@ export default {
 
     /* -----------------------------------------------------
 
-     * WebSocket relay
+     * /apiws
 
      * --------------------------------------------------- */
 
@@ -248,27 +242,13 @@ export default {
 
     }
 
-    /* -----------------------------------------------------
-
-     * 404
-
-     * --------------------------------------------------- */
-
     return new Response(
 
       "Not Found",
 
       {
 
-        status: 404,
-
-        headers: {
-
-          "content-type":
-
-            "text/plain; charset=UTF-8"
-
-        }
+        status: 404
 
       }
 
@@ -280,7 +260,7 @@ export default {
 
 /* =========================================================
 
- * WebSocket handler
+ * WebSocket Relay
 
  * ======================================================= */
 
@@ -288,19 +268,25 @@ async function handleWebSocket(request) {
 
   /* -------------------------------------------------------
 
-   * Check WebSocket upgrade
+   * Check Upgrade
 
    * ----------------------------------------------------- */
 
   const upgrade =
 
-    request.headers.get("Upgrade");
+    request.headers.get(
+
+      "Upgrade"
+
+    );
 
   if (
 
     !upgrade ||
 
-    upgrade.toLowerCase() !== "websocket"
+    upgrade.toLowerCase() !==
+
+      "websocket"
 
   ) {
 
@@ -328,7 +314,7 @@ async function handleWebSocket(request) {
 
   /* -------------------------------------------------------
 
-   * Parse DC
+   * URL / DC
 
    * ----------------------------------------------------- */
 
@@ -340,13 +326,19 @@ async function handleWebSocket(request) {
 
     Number(
 
-      url.searchParams.get("dc")
+      url.searchParams.get(
 
-      || DEFAULT_DC
+        "dc"
+
+      ) || DEFAULT_DC
 
     );
 
-  if (!TELEGRAM_DCS[dc]) {
+  if (
+
+    !TELEGRAM_DCS[dc]
+
+  ) {
 
     dc =
 
@@ -354,25 +346,13 @@ async function handleWebSocket(request) {
 
   }
 
-  /* -------------------------------------------------------
-
-   * Select Telegram server
-
-   *
-
-   * 当前使用第一个地址。
-
-   * 后续可以加入自动故障转移。
-
-   * ----------------------------------------------------- */
-
   const hostname =
 
     TELEGRAM_DCS[dc][0];
 
   /* -------------------------------------------------------
 
-   * Create WebSocket pair
+   * WebSocket pair
 
    * ----------------------------------------------------- */
 
@@ -392,16 +372,6 @@ async function handleWebSocket(request) {
 
    * Accept WebSocket
 
-   *
-
-   * 不手动设置
-
-   * Sec-WebSocket-Protocol
-
-   *
-
-   * 先保证标准 WebSocket handshake。
-
    * ----------------------------------------------------- */
 
   server.accept({
@@ -410,19 +380,37 @@ async function handleWebSocket(request) {
 
   });
 
-  /* -------------------------------------------------------
+  /*
 
-   * Connect Telegram TCP
+   * IMPORTANT
 
-   * ----------------------------------------------------- */
+   *
+
+   * connect() 是异步 API。
+
+   *
+
+   * 必须 await。
+
+   */
 
   let socket;
 
   try {
 
+    console.log(
+
+      "Connecting Telegram:",
+
+      hostname,
+
+      443
+
+    );
+
     socket =
 
-      connect({
+      await connect({
 
         hostname:
 
@@ -442,11 +430,19 @@ async function handleWebSocket(request) {
 
       });
 
+    console.log(
+
+      "Telegram TCP connected:",
+
+      hostname
+
+    );
+
   } catch (error) {
 
     console.error(
 
-      "TCP connect error:",
+      "Telegram TCP connection failed:",
 
       error
 
@@ -472,7 +468,9 @@ async function handleWebSocket(request) {
 
         status: 101,
 
-        webSocket: client
+        webSocket:
+
+          client
 
       }
 
@@ -496,7 +494,7 @@ async function handleWebSocket(request) {
 
    * ----------------------------------------------------- */
 
-  async function closeEverything(
+  function stop(
 
     code = 1000,
 
@@ -536,7 +534,7 @@ async function handleWebSocket(request) {
 
   /* =======================================================
 
-   * WebSocket → Telegram TCP
+   * WebSocket → TCP
 
    * ===================================================== */
 
@@ -558,7 +556,7 @@ async function handleWebSocket(request) {
 
         /* -----------------------------------------------
 
-         * Text
+         * String
 
          * --------------------------------------------- */
 
@@ -592,9 +590,11 @@ async function handleWebSocket(request) {
 
           typeof Blob !==
 
-          "undefined" &&
+            "undefined" &&
 
-          event.data instanceof Blob
+          event.data instanceof
+
+            Blob
 
         ) {
 
@@ -612,7 +612,7 @@ async function handleWebSocket(request) {
 
         /* -----------------------------------------------
 
-         * ArrayBuffer
+         * ArrayBuffer / TypedArray
 
          * --------------------------------------------- */
 
@@ -640,12 +640,6 @@ async function handleWebSocket(request) {
 
         }
 
-        /* -----------------------------------------------
-
-         * Write TCP
-
-         * --------------------------------------------- */
-
         const writer =
 
           socket.writable
@@ -670,13 +664,13 @@ async function handleWebSocket(request) {
 
         console.error(
 
-          "WS → TCP error:",
+          "WS → TCP failed:",
 
           error
 
         );
 
-        await closeEverything(
+        stop(
 
           1011,
 
@@ -692,7 +686,7 @@ async function handleWebSocket(request) {
 
   /* =======================================================
 
-   * Telegram TCP → WebSocket
+   * TCP → WebSocket
 
    * ===================================================== */
 
@@ -712,7 +706,11 @@ async function handleWebSocket(request) {
 
           await reader.read();
 
-        if (result.done) {
+        if (
+
+          result.done
+
+        ) {
 
           break;
 
@@ -744,7 +742,7 @@ async function handleWebSocket(request) {
 
       if (!stopped) {
 
-        await closeEverything(
+        stop(
 
           1000,
 
@@ -758,13 +756,13 @@ async function handleWebSocket(request) {
 
       console.error(
 
-        "TCP → WS error:",
+        "TCP → WS failed:",
 
         error
 
       );
 
-      await closeEverything(
+      stop(
 
         1011,
 
@@ -790,7 +788,7 @@ async function handleWebSocket(request) {
 
       console.log(
 
-        "WebSocket closed:",
+        "Client WebSocket closed:",
 
         event.code,
 
@@ -826,7 +824,7 @@ async function handleWebSocket(request) {
 
       console.error(
 
-        "WebSocket error:",
+        "Client WebSocket error:",
 
         error
 
@@ -846,11 +844,11 @@ async function handleWebSocket(request) {
 
   );
 
-  /* -------------------------------------------------------
+  /* =======================================================
 
-   * Standard Cloudflare WebSocket response
+   * Response
 
-   * ----------------------------------------------------- */
+   * ===================================================== */
 
   return new Response(
 
@@ -860,7 +858,9 @@ async function handleWebSocket(request) {
 
       status: 101,
 
-      webSocket: client
+      webSocket:
+
+        client
 
     }
 
@@ -870,7 +870,7 @@ async function handleWebSocket(request) {
 
 /* =========================================================
 
- * JSON helper
+ * JSON
 
  * ======================================================= */
 
@@ -918,7 +918,7 @@ function json(
 
 /* =========================================================
 
- * Homepage
+ * Root HTML
 
  * ======================================================= */
 
@@ -964,13 +964,9 @@ body {
 
   min-height: 100vh;
 
-  background:
+  background: #f5f6f8;
 
-    #f5f6f8;
-
-  color:
-
-    #111;
+  color: #111;
 
   font-family:
 
@@ -992,7 +988,7 @@ main {
 
   width:
 
-    min(680px, 100%);
+    min(680px,100%);
 
   margin:
 
@@ -1052,10 +1048,6 @@ h1 {
 
     28px;
 
-  letter-spacing:
-
-    -.5px;
-
 }
 
 .subtitle {
@@ -1104,10 +1096,6 @@ h1 {
 
     none;
 
-  font-size:
-
-    15px;
-
   font-weight:
 
     600;
@@ -1132,7 +1120,7 @@ Telegram Cloudflare
 
 <div class="subtitle">
 
-V0.3.1 · WebSocket → TCP
+V0.3.2 · WebSocket → TCP
 
 </div>
 
@@ -1172,7 +1160,7 @@ MTProto 测试
 
 /* =========================================================
 
- * MTProto diagnostic page
+ * MTProto test HTML
 
  * ======================================================= */
 
@@ -1260,7 +1248,7 @@ main {
 
   width:
 
-    min(680px, 100%);
+    min(680px,100%);
 
   margin:
 
@@ -1438,10 +1426,6 @@ main {
 
     1;
 
-  min-width:
-
-    0;
-
 }
 
 .name {
@@ -1568,7 +1552,7 @@ button:disabled {
 
   min-height:
 
-    100px;
+    110px;
 
   padding:
 
@@ -1652,7 +1636,7 @@ MTProto
 
 <div class="subtitle">
 
-Cloudflare WebSocket Relay · V0.3.1
+Cloudflare WebSocket Relay · V0.3.2
 
 </div>
 
@@ -1792,7 +1776,7 @@ MTProto
 
 <div class="detail">
 
-Transport layer
+Transport test
 
 </div>
 
@@ -1830,15 +1814,19 @@ Transport layer
 
 <div class="note">
 
-这一版只验证：
+V0.3.2 当前验证：
 
-WSS → Cloudflare Worker
+浏览器
+
+→ WSS
+
+→ Cloudflare Worker
 
 → Telegram TCP
 
-0xEF 是 Abridged Transport
+0xEF 只是 Abridged Transport
 
-协议标识，并不代表已经完成
+协议标识，不代表已经完成
 
 MTProto 2.0 authentication。
 
@@ -1858,7 +1846,11 @@ const logEl =
 
   $("log");
 
-function log(message) {
+function log(
+
+  message
+
+) {
 
   const time =
 
@@ -1938,7 +1930,7 @@ async function runTest() {
 
     "telegram",
 
-    "连接中",
+    "等待",
 
     "wait"
 
@@ -1956,15 +1948,17 @@ async function runTest() {
 
   try {
 
-    /* ---------------------------------------------------
+    /* -----------------------------------------------
 
-     * Build WebSocket URL
+     * WebSocket URL
 
-     * ------------------------------------------------- */
+     * --------------------------------------------- */
 
-    const wsProtocol =
+    const protocol =
 
-      location.protocol === "https:"
+      location.protocol ===
+
+      "https:"
 
         ? "wss:"
 
@@ -1972,7 +1966,7 @@ async function runTest() {
 
     const url =
 
-      wsProtocol +
+      protocol +
 
       "//" +
 
@@ -1992,21 +1986,15 @@ async function runTest() {
 
     );
 
-    /* ---------------------------------------------------
+    /* -----------------------------------------------
 
-     * IMPORTANT
-
-     *
-
-     * V0.3.1 暂时不指定
-
-     * Sec-WebSocket-Protocol: binary
+     * WebSocket
 
      *
 
-     * 先确认基础 WSS relay。
+     * 暂时不指定 binary subprotocol。
 
-     * ------------------------------------------------- */
+     * --------------------------------------------- */
 
     const ws =
 
@@ -2020,11 +2008,11 @@ async function runTest() {
 
       "arraybuffer";
 
-    /* ---------------------------------------------------
+    /* -----------------------------------------------
 
      * Open
 
-     * ------------------------------------------------- */
+     * --------------------------------------------- */
 
     ws.onopen = () => {
 
@@ -2078,23 +2066,19 @@ async function runTest() {
 
       );
 
-      /* -----------------------------------------------
+      /*
 
        * Abridged transport marker
 
-       * --------------------------------------------- */
+       */
 
-      const test =
+      ws.send(
 
         new Uint8Array([
 
           0xef
 
-        ]);
-
-      ws.send(
-
-        test
+        ])
 
       );
 
@@ -2108,7 +2092,7 @@ async function runTest() {
 
         "mtproto",
 
-        "Transport 字节已发送",
+        "字节已发送",
 
         "wait"
 
@@ -2116,15 +2100,15 @@ async function runTest() {
 
     };
 
-    /* ---------------------------------------------------
+    /* -----------------------------------------------
 
      * Message
 
-     * ------------------------------------------------- */
+     * --------------------------------------------- */
 
     ws.onmessage =
 
-      event => {
+      async event => {
 
         let data;
 
@@ -2144,43 +2128,37 @@ async function runTest() {
 
             );
 
-        } else if (
+        }
+
+        else if (
+
+          typeof Blob !==
+
+            "undefined" &&
 
           event.data instanceof
 
-          Blob
+            Blob
 
         ) {
 
-          event.data
+          data =
 
-            .arrayBuffer()
+            new Uint8Array(
 
-            .then(
+              await event.data
 
-              buffer => {
-
-                handleData(
-
-                  new Uint8Array(
-
-                    buffer
-
-                  )
-
-                );
-
-              }
+                .arrayBuffer()
 
             );
 
-          return;
+        }
 
-        } else {
+        else {
 
           log(
 
-            "← 收到非二进制数据"
+            "← 收到未知数据类型"
 
           );
 
@@ -2188,105 +2166,83 @@ async function runTest() {
 
         }
 
-        handleData(
+        log(
 
-          data
+          "← Telegram 返回 " +
+
+          data.byteLength +
+
+          " bytes"
 
         );
 
-      };
+        if (
 
-    function handleData(
+          data.byteLength
 
-      data
+          > 0
 
-    ) {
+        ) {
 
-      log(
+          const hex =
 
-        "← Telegram 返回 " +
+            Array.from(
 
-        data.byteLength +
+              data.slice(
 
-        " bytes"
+                0,
 
-      );
+                32
 
-      if (
-
-        data.byteLength > 0
-
-      ) {
-
-        const hex =
-
-          Array.from(
-
-            data.slice(
-
-              0,
-
-              32
+              )
 
             )
 
-          )
+            .map(
 
-          .map(
+              x =>
 
-            x =>
+                x
 
-              x
+                  .toString(16)
 
-                .toString(16)
+                  .padStart(
 
-                .padStart(
+                    2,
 
-                  2,
+                    "0"
 
-                  "0"
+                  )
 
-                )
+            )
 
-          )
+            .join(" ");
 
-          .join(" ");
+          log(
 
-        log(
+            "HEX: " +
 
-          "HEX: " +
+            hex
 
-          hex
+          );
 
-        );
+        }
 
-      }
+      };
 
-    }
-
-    /* ---------------------------------------------------
+    /* -----------------------------------------------
 
      * Error
 
-     * ------------------------------------------------- */
+     * --------------------------------------------- */
 
     ws.onerror =
 
-      event => {
+      () => {
 
         setStatus(
 
           "wss",
-
-          "失败",
-
-          "fail"
-
-        );
-
-        setStatus(
-
-          "telegram",
 
           "失败",
 
@@ -2300,21 +2256,13 @@ async function runTest() {
 
         );
 
-        log(
-
-          "readyState = " +
-
-          ws.readyState
-
-        );
-
       };
 
-    /* ---------------------------------------------------
+    /* -----------------------------------------------
 
      * Close
 
-     * ------------------------------------------------- */
+     * --------------------------------------------- */
 
     ws.onclose =
 
